@@ -614,6 +614,17 @@ if app.glass_img:
           "유리 배경이 창 크기와 같음 (%dx%d)" % (app.glass_img.width(), app.glass_img.height()))
 else:
     check(False, "유리 배경을 만들지 못함 (바탕화면 캡처 실패)")
+app._desk = None                        # 드래그용 바탕화면 유리를 만드는 중에
+app.prepare_desk()
+app.update()
+app.set_view("tt")                       # 화면을 다시 그려도
+end = time.time() + 4
+while time.time() < end and not app.desk_ready():
+    app.update()
+    time.sleep(0.02)
+check(app.desk_ready() and not app._desk_busy,
+      "유리를 만드는 중에 화면을 다시 그려도 드래그용 유리가 만들어짐 (예전엔 영영 멈춤)")
+app.set_view("cal")
 app.set_glass("off")
 check(app.glass_img is None and json.load(open(deskcal.CONF_FILE))["glass"] == "off",
       "'단색'으로 바꾸면 유리 없이 저장됨")

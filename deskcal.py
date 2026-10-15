@@ -23,7 +23,7 @@ import tkinter.font as tkfont
 import tkinter.messagebox as tkmsg
 import winreg
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 FROZEN = getattr(sys, "frozen", False)          # PyInstaller 로 묶은 exe 로 실행 중
 RES_DIR = getattr(sys, "_MEIPASS", HERE)        # 함께 묶인 파일(글꼴)이 있는 곳
@@ -1022,7 +1022,8 @@ class DeskCal(tk.Tk):
         self._drag_pos = None          # 드래그 중 창이 간 자리 (geometry 가 반영되기 전에도 맞게)
         self._desk = None              # 바탕화면 전체 유리 (드래그 중 밀기만 하면 되도록 미리 만든다)
         self._desk_q = queue.Queue()   # 만드는 스레드 → 화면 스레드 (Tk 는 화면 스레드만 만진다)
-        self._desk_job = None
+        self._desk_job = None          # 다음 '만들기' 예약 (화면을 다시 그리면 다시 잡는다)
+        self._desk_poll = None         # 만드는 중인 결과를 기다리는 예약 (취소하면 안 된다)
         self._desk_busy = False
         self._glass_alpha = None
         self._glass_sig = None
@@ -1088,7 +1089,7 @@ class DeskCal(tk.Tk):
         # 예약해 둔 타이머를 먼저 끊는다. 안 그러면 창이 사라진 뒤에 깨어나 오류를 낸다.
         jobs = list(getattr(self, "_jobs", {}).values())
         jobs += [getattr(self, "_status_job", None), getattr(self, "_tip_job", None),
-                 getattr(self, "_desk_job", None)]
+                 getattr(self, "_desk_job", None), getattr(self, "_desk_poll", None)]
         for job in jobs:
             try:
                 if job:
@@ -1584,9 +1585,7 @@ class DeskCal(tk.Tk):
         c.bind("<Button-3>", self.menu)
         self.draw_header()
         self.render()
-        if self._desk_job:
-            self.after_cancel(self._desk_job)
-        self._desk_job = self.after(1500, self.prepare_desk)
+        self.schedule_desk(1500)
 
     def glass_under(self, c, ox, oy):
         """캔버스 c 의 맨 아래에 유리 배경의 해당 부분을 깐다 (c 가 창 안 ox,oy 에 있을 때)."""
@@ -1640,7 +1639,12 @@ class DeskCal(tk.Tk):
             finally:
                 _glass_busy.release()
         threading.Thread(target=work, daemon=True, name="glass-desk").start()
-        self._desk_job = self.after(60, self.take_desk)
+        self._desk_poll = self.after(60, self.take_desk)
+
+    def schedule_desk(self, ms):
+        if self._desk_job:
+            self.after_cancel(self._desk_job)
+        self._desk_job = self.after(ms, self.prepare_desk)
 
     def take_desk(self):
         running = _glass_busy.locked()         # 먼저 본다: 끝났다면 결과는 이미 큐에 있다
@@ -1648,13 +1652,15 @@ class DeskCal(tk.Tk):
             key, ppm, small = self._desk_q.get_nowait()
         except queue.Empty:
             if running:
-                self._desk_job = self.after(60, self.take_desk)
-            else:
-                self._desk_job, self._desk_busy = None, False     # 실패로 끝남
+                self._desk_poll = self.after(60, self.take_desk)
+            else:                                  # 실패로 끝남: 잠시 뒤 다시
+                self._desk_poll, self._desk_busy = None, False
+                self.schedule_desk(30000)
             return
-        self._desk_job, self._desk_busy = None, False
+        self._desk_poll, self._desk_busy = None, False
         if key[:2] != (self._glass_alpha, BASE):
-            return                         # 만드는 사이 테마·투명도가 바뀌었다
+            self.schedule_desk(500)            # 만드는 사이 테마·투명도가 바뀌었다: 새로
+            return
         try:
             img = tk.PhotoImage(master=self, data=ppm, format="ppm")
         except tk.TclError:

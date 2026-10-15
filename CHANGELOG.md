@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1 — 2026-10-15
+
+### Fixes
+
+- The frosted glass could stop following the desktop while dragging the widget. This
+  happened when the screen was redrawn (switching tabs, importing a timetable, changing
+  theme or size) at the moment the glass was being prepared.
+
 ## 1.1.0 — 2026-10-15
 
 ### New

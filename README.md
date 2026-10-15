@@ -61,7 +61,7 @@ and needs no account.
 Each release lists the zip's SHA-256 checksum. In PowerShell:
 
 ```powershell
-Get-FileHash .\DeskCal-1.1.0-windows-x64.zip
+Get-FileHash .\DeskCal-1.1.1-windows-x64.zip
 ```
 
 The hash should match the one on the release page.
