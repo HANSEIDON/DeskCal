@@ -1,4 +1,6 @@
-# DeskCal — Desktop Calendar & Timetable for PKU Students
+# DeskCal
+
+**Desktop calendar & timetable for PKU students.**
 
 A calendar and class timetable that lives on your Windows desktop. It sits just above the
 wallpaper, stays visible through *Show desktop* (Win+D), and keeps everything on your own
@@ -84,7 +86,7 @@ The printed hash should match the one on the release page.
 2. Download this repository (**Code → Download ZIP**, then extract it), or clone it:
 
    ```bash
-   git clone https://github.com/HANSEIDON/DeskCal-Desktop-Calendar-Timetable-for-PKU-Students.git
+   git clone https://github.com/HANSEIDON/DeskCal.git
    ```
 
 3. Double-click **`DeskCal.bat`**.
