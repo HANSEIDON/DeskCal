@@ -24,9 +24,12 @@ and needs no account.
 
 - 📅 **Calendar with notes**: click a day and type. Color it, tick it off, edit in place.
 - ⏰ **Upcoming deadlines** with D-day badges. Orange within a week, red for today and tomorrow.
+- 🎓 **One-click import from PKU portal**: sign in once and your 课表 fills in, with rooms,
+  单双周 and final exam dates.
 - 🗓️ **Timetable**: Mon–Fri, 12 periods on PKU's schedule. The current class is highlighted.
 - 🔁 **Odd / even weeks** (单周 / 双周). Classes not meeting this week are shown dashed.
-- 📝 **Exam dates per course**: midterm, final and final project, shown in Upcoming.
+- 📝 **Exams on the calendar**: midterm, final and project deadlines per course appear on the
+  calendar and in Upcoming.
 - 🪟 **Always on the desktop**, even after Win+D. Frosted-glass look, dark and light themes.
 - 🌐 **English / 한국어 / 中文**, with a bundled font so CJK text renders cleanly.
 - 💾 **Autosave and Ctrl+Z.** Light on resources: about 100 MB of memory, near-zero idle CPU.
@@ -58,7 +61,7 @@ and needs no account.
 Each release lists the zip's SHA-256 checksum. In PowerShell:
 
 ```powershell
-Get-FileHash .\DeskCal-1.0.0-windows-x64.zip
+Get-FileHash .\DeskCal-1.1.0-windows-x64.zip
 ```
 
 The hash should match the one on the release page.
@@ -70,10 +73,29 @@ The hash should match the one on the release page.
 2. Download this repo (**Code → Download ZIP**) or `git clone https://github.com/HANSEIDON/DeskCal.git`.
 3. Double-click **`DeskCal.bat`**. No packages to install.
 
+The PKU portal import opens a sign-in window, which needs one extra package when you run
+from source: `pip install pywebview`. The exe already includes it.
+
 ### Start with Windows
 
-Turn on **≡ → Start with Windows**. This adds an entry to your user's `Run` registry key
-(no admin rights needed). Turning it off removes the entry.
+DeskCal starts with Windows by default, quietly behind your windows. To stop that, turn off
+**≡ → Start with Windows**. The setting is an entry in your user's `Run` registry key (no
+admin rights needed), and turning it off removes the entry.
+
+## 🎓 Import from PKU portal
+
+1. In **Timetable**, click **Import timetable from PKU portal** (also in the **≡** menu).
+2. Sign in on PKU's own sign-in page in the window that opens.
+3. The window closes by itself, and your classes appear in the timetable.
+
+What gets imported: course names, rooms, weekdays and periods, odd/even weeks, and final exam
+dates. Courses you already have keep their colors, exam dates you entered yourself are never
+overwritten, and classes you added by hand stay. Ctrl+Z undoes the whole import.
+
+> [!NOTE]
+> You type your password into PKU's sign-in page, not into DeskCal. DeskCal never sees or
+> stores it, keeps no cookies after the window closes, and only reads your own course table
+> once. If the window keeps loading, check your network or VPN and try again.
 
 ## 🖱️ How to use
 
@@ -87,7 +109,7 @@ Turn on **≡ → Start with Windows**. This adds an entry to your user's `Run` 
 | Undo | Ctrl+Z |
 | Add a class | **Timetable** → click a cell → type the course name (saves automatically) |
 | Odd / even-week class | **Every / Odd / Even** in the side panel |
-| Exam dates | Select a class → **Exams · Deadlines** |
+| Exam dates | Select a class → **Exams · Deadlines**. They show on the calendar as squares |
 | Set which week is odd | **≡ → Odd / even week** |
 
 The settings menu also has language, theme, background, size and *Always on top*. After two
@@ -148,6 +170,10 @@ python tools/build.py
 
 This builds `dist/DeskCal-<version>-windows-x64.zip` and its `.sha256` file, using a pinned
 PyInstaller version in an isolated `.build-venv`.
+
+## 📝 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## 📄 License
 

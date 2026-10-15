@@ -662,6 +662,85 @@ check(app.winfo_x() == good, "화면 안이면 위치를 건드리지 않음")
 app.destroy()
 
 # ------------------------------------------------------------------
+section("북대 门户 课表 가져오기")
+
+
+def cell(name, info, exam=""):
+    return {"courseName": '<div><span>%s(主)<br>上课信息：%s  教师：某某 <br>考试信息：%s</span></div>'
+                          % (name, info, exam)}
+
+
+EMPTY = {"courseName": ""}
+row = lambda **kw: {k: kw.get(k, EMPTY) for k in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")}
+resp = {"success": True, "course": [
+    row(mon=cell("高等数学（B）", "1-16周 每周 理教107", "20270105 星期二 上午")),
+    row(mon=cell("高等数学（B）", "1-16周 每周 理教107", "20270105 星期二 上午"),
+        fri={"courseName": cell("程序设计", "1-16周 单周 理教215", "20270110 星期日 上午")["courseName"] + "<br>"
+             + cell("实验课", "1-16周 双周 理教216")["courseName"]}),
+    row(tue={"courseName": '体育(主)<br>上课信息：1-16周 每周   教师：某某 备注：五四网球场  自带球拍<br>考试信息：'},
+        sat=cell("周末课", "1-16周 每周 二教101")),
+]}
+got = deskcal.parse_pku_cell(resp["course"][0]["mon"]["courseName"])
+check(got == [{"title": "高等数学（B）", "room": "理教107", "week": "all",
+               "exam": ("2027-01-05", "上午")}], "칸 하나: 과목·강의실·주차·시험 %r" % got)
+check([c["week"] for c in deskcal.parse_pku_cell(resp["course"][1]["fri"]["courseName"])]
+      == ["odd", "even"], "한 칸에 두 과목 (单周 / 双周)")
+check(deskcal.parse_pku_cell(resp["course"][2]["tue"]["courseName"])[0]["room"] == "五四网球场",
+      "강의실이 비면 备注에서 장소를 찾음")
+slots, weekend = deskcal.parse_pku_table(resp)
+check(set(slots) == {(0, 1), (0, 2), (4, 2), (1, 3)} and weekend == 1, "칸 위치 · 주말 수업 셈")
+
+app, d = fresh(files={"timetable.json": {
+    "0-1": {"title": "高等数学（B）", "room": "", "color": deskcal.PALETTE[5], "week": "all"},
+    "3-9": {"title": "高等数学（B）", "room": "", "color": deskcal.PALETTE[5], "week": "all"},
+    "2-6": {"title": "직접 넣은 수업", "room": "", "color": deskcal.PALETTE[2], "week": "all"}},
+    "courses.json": {"程序设计": {"fin_date": "2027-01-12", "fin_time": "09:00"}}})
+deskcal.tkmsg.showinfo = lambda *a, **k: None
+app.apply_pku(resp)
+tt = json.load(open(deskcal.TT_FILE, encoding="utf-8"))
+check(tt["0-1"]["color"] == deskcal.PALETTE[5] and "3-9" not in tt,
+      "같은 과목은 원래 색 유지, 옮겨진 옛 칸은 정리")
+check(tt["2-6"]["title"] == "직접 넣은 수업", "직접 넣은 다른 수업은 그대로")
+check(tt["4-2"]["week"] == "odd" and tt["1-3"]["room"] == "五四网球场", "주차·강의실 저장")
+check(json.load(open(deskcal.COURSE_FILE, encoding="utf-8"))["高等数学（B）"]
+      == {"fin_date": "2027-01-05", "fin_time": "上午"}, "시험 일정은 期末考试 칸으로")
+check(json.load(open(deskcal.COURSE_FILE, encoding="utf-8"))["程序设计"]["fin_date"] == "2027-01-12",
+      "직접 적어둔 시험 날짜는 덮어쓰지 않음")
+
+app.courses["옛 과목"] = {"mid_date": "%02d-%02d" % (app.today.month, app.today.day)}
+check(app.exams_on(app.today) == [("mid", "옛 과목", "")], "예전 형식 날짜(연도 없음)도 달력에 나옴")
+del app.courses["옛 과목"]
+
+# 시간표의 시험이 달력에도 보인다
+exam_day = dt.date(2027, 1, 5)
+check(app.exams_on(exam_day) == [("fin", "高等数学（B）", "上午")], "그 날의 시험 찾기")
+app.set_view("cal")
+app.shown, app.selected = exam_day.replace(day=1), exam_day
+app.render()
+app.update()
+check(any(app.cal.type(i) == "rectangle" for i in app.cal.find_all()), "달력 칸에 시험 표시(네모)")
+labels = [w.cget("text") for w in walk(app.panel, []) if w.winfo_class() == "Label"]
+check(any("期末" in t or "Final" in t or "高等数学（B）" in t for t in labels),
+      "그 날 패널에 시험이 보임: %r" % [t for t in labels if "高等" in t])
+row = next(w for w in walk(app.panel, []) if w.winfo_class() == "Label"
+           and "高等数学（B）" in w.cget("text"))
+row.event_generate("<Button-1>")
+app.update()
+check(app.view == "tt" and app.tt_sel == (0, 1), "누르면 시간표의 그 과목 칸으로 (%s %s)"
+      % (app.view, app.tt_sel))
+app.undo()
+check(json.load(open(deskcal.TT_FILE, encoding="utf-8"))["3-9"]["title"] == "高等数学（B）",
+      "Ctrl+Z 로 가져오기 전체를 되돌림")
+app.destroy()
+
+# ------------------------------------------------------------------
+app, d = fresh(files={"courses.json": {"과목": {"mid_date": "11-09", "asg_date": "实践"}}})
+saved = json.load(open(deskcal.COURSE_FILE, encoding="utf-8"))["과목"]
+check(saved["mid_date"].endswith("-11-09") and len(saved["mid_date"]) == 10
+      and saved["asg_date"] == "实践", "켤 때 연도 없는 날짜를 정리 (날짜가 아닌 글은 그대로)")
+app.destroy()
+
+# ------------------------------------------------------------------
 section("exe · 윈도우 시작 시 실행")
 deskcal.RUN_NAME = "DeskCal_test_%d" % os.getpid()      # 진짜 'DeskCal' 값은 건드리지 않는다
 cmd = deskcal.launch_command()
@@ -671,6 +750,14 @@ deskcal.set_autostart(True)
 check(deskcal.autostart_enabled(), "켜면 레지스트리에 등록됨")
 deskcal.set_autostart(False)
 check(not deskcal.autostart_enabled(), "끄면 지워짐")
+app, d = fresh()
+app.init_autostart()
+check(deskcal.autostart_enabled() and json.load(open(deskcal.CONF_FILE))["autostart"] is True,
+      "처음 켜면 자동 실행이 켜짐")
+app.set_autostart_pref(False)
+app.init_autostart()
+check(not deskcal.autostart_enabled(), "메뉴에서 끄면 다음에 켜도 다시 켜지지 않음")
+app.destroy()
 deskcal.FROZEN = True
 check(deskcal.default_data_dir() == os.path.join(os.environ["LOCALAPPDATA"], "DeskCal"),
       "exe 는 %LOCALAPPDATA%\\DeskCal 에 저장")

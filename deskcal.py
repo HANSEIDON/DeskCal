@@ -4,6 +4,8 @@ import calendar
 import ctypes
 import datetime as dt
 import glob
+import html
+import importlib.util
 import json
 import os
 import queue
@@ -12,14 +14,16 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import traceback
 import tkinter as tk
 import tkinter.font as tkfont
+import tkinter.messagebox as tkmsg
 import winreg
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 FROZEN = getattr(sys, "frozen", False)          # PyInstaller 로 묶은 exe 로 실행 중
 RES_DIR = getattr(sys, "_MEIPASS", HERE)        # 함께 묶인 파일(글꼴)이 있는 곳
@@ -441,6 +445,7 @@ TEXT = {
         "event_hint": "새 일정을 적고 Enter",
         "tip_done": "클릭: 완료 표시  ·  우클릭: 색 바꾸기",
         "tip_edit": "클릭해서 고치기",
+        "tip_exam": "클릭하면 시간표에서 고칠 수 있어요",
         "tip_delete": "지우기 (Ctrl+Z로 되돌리기)",
         "tip_menu": "설정 (언어 · 테마 · 크기 · 주차)",
         "tip_date": "눌러서 달력에서 날짜 고르기",
@@ -455,6 +460,14 @@ TEXT = {
         "glass": "배경", "glass_soft": "유리 (은은하게)", "glass_clear": "유리 (선명하게)",
         "glass_off": "단색", "now": "지금", "next": "다음",
         "autostart": "윈도우 시작 시 실행",
+        "pku_import": "북대 门户에서 시간표 가져오기",
+        "pku_login_title": "북대 门户 로그인 — 로그인하면 시간표를 가져와요",
+        "pku_waiting": "열린 창에서 로그인해 주세요 (계속 로딩만 되면 VPN을 끄고 다시 시도)",
+        "pku_done": "{n}개 과목 · {c}칸을 가져왔어요{extra}\n색·이름은 지금처럼 고칠 수 있고, Ctrl+Z로 되돌릴 수 있어요.",
+        "pku_skipped": "\n(주말·겹친 수업 {k}개는 넣지 않았어요)",
+        "pku_empty": "가져올 수업을 찾지 못했어요.",
+        "pku_failed": "로그인 창이 닫혀서 가져오지 못했어요.",
+        "pku_need_webview": "로그인 창을 띄우려면 먼저 설치가 필요해요:\n\npip install pywebview",
         "open_data": "데이터 폴더 열기", "quit": "종료",
     },
     "en": {
@@ -492,6 +505,7 @@ TEXT = {
         "event_hint": "Type a new event, then Enter",
         "tip_done": "Click: mark done  ·  Right-click: change color",
         "tip_edit": "Click to edit",
+        "tip_exam": "Click to edit it in the timetable",
         "tip_delete": "Delete (Ctrl+Z to undo)",
         "tip_menu": "Settings (language · theme · size · weeks)",
         "tip_date": "Click to pick a date from a calendar",
@@ -507,6 +521,14 @@ TEXT = {
         "glass": "Background", "glass_soft": "Glass (subtle)", "glass_clear": "Glass (clear)",
         "glass_off": "Solid", "now": "Now", "next": "Next",
         "autostart": "Start with Windows",
+        "pku_import": "Import timetable from PKU portal",
+        "pku_login_title": "PKU portal sign-in — your timetable is imported after you sign in",
+        "pku_waiting": "Sign in in the new window (if it keeps loading, turn off your VPN and retry)",
+        "pku_done": "Imported {n} courses, {c} periods.{extra}\nYou can still edit colors and names. Ctrl+Z undoes the import.",
+        "pku_skipped": "\n({k} weekend or overlapping classes were left out.)",
+        "pku_empty": "No classes were found.",
+        "pku_failed": "The sign-in window was closed before the timetable was imported.",
+        "pku_need_webview": "The sign-in window needs pywebview. Install it first:\n\npip install pywebview",
         "open_data": "Open data folder", "quit": "Quit",
     },
     "zh": {
@@ -543,6 +565,7 @@ TEXT = {
         "event_hint": "输入新日程，按 Enter",
         "tip_done": "单击：标记完成  ·  右键：更改颜色",
         "tip_edit": "单击修改",
+        "tip_exam": "点击在课表中修改",
         "tip_delete": "删除（Ctrl+Z 撤销）",
         "tip_menu": "设置（语言 · 主题 · 大小 · 周次）",
         "tip_date": "点击从日历中选择日期",
@@ -557,6 +580,14 @@ TEXT = {
         "glass": "背景", "glass_soft": "毛玻璃（柔和）", "glass_clear": "毛玻璃（清透）",
         "glass_off": "纯色", "now": "现在", "next": "下节",
         "autostart": "开机自动启动",
+        "pku_import": "从北大门户导入课表",
+        "pku_login_title": "登录北大门户 — 登录后自动导入课表",
+        "pku_waiting": "请在弹出的窗口中登录（一直加载的话，请关闭 VPN 后重试）",
+        "pku_done": "已导入 {n} 门课、{c} 节。{extra}\n颜色和名称仍可修改，Ctrl+Z 可撤销导入。",
+        "pku_skipped": "\n（周末或时间冲突的 {k} 门课未导入）",
+        "pku_empty": "没有找到课程。",
+        "pku_failed": "登录窗口已关闭，未能导入课表。",
+        "pku_need_webview": "需要先安装 pywebview 才能打开登录窗口：\n\npip install pywebview",
         "open_data": "打开数据文件夹", "quit": "退出",
     },
 }
@@ -714,6 +745,113 @@ def set_autostart(on):
         log("윈도우 시작 시 실행 설정 실패:\n" + traceback.format_exc())
 
 
+# ---------- 북대 门户 课表 가져오기 ----------
+# 门户 课表 페이지(publicQuery/#/myCourseTable)는 로그인한 뒤 아래 두 주소에서 JSON 을
+# 받아 그린다. course[i] 가 (i+1)교시 줄이고 mon..sun 의 courseName 이 칸의 HTML 이다:
+#   과목명(主)<br>上课信息：1-16周 每周 三教305  教师：…  备注：…<br>考试信息：20261230 星期三 下午
+PKU_PAGE = "https://portal.pku.edu.cn/publicQuery/#/myCourseTable"
+# 课表 페이지(publicQuery)는 门户와 따로 로그인한다. 로그인 전에 열면 로딩만 하므로,
+# 통합 로그인(IAAA)에서 publicQuery 용으로 로그인하고 publicQuery/ssoLogin.do 로 돌아온다.
+PKU_LOGIN = ("https://iaaa.pku.edu.cn/iaaa/oauth.jsp?appID=portalPublicQuery&appName="
+             "%E5%8C%97%E4%BA%AC%E5%A4%A7%E5%AD%A6%E6%A0%A1%E5%86%85%E4%BF%A1%E6%81%AF"
+             "%E9%97%A8%E6%88%B7&redirectUrl=https%3A%2F%2Fportal.pku.edu.cn%2FpublicQuery"
+             "%2FssoLogin.do%3FmoduleID%3DmyCourseTable")
+# 페이지를 멈추지 않게 비동기로 받아 window.__dc 에 둔다 (null=받는 중, ''=실패).
+PKU_FETCH_JS = r"""(function(){
+ if(window.__dcBusy) return 'busy'; window.__dcBusy=1; window.__dc=null;
+ var base='/publicQuery/ctrl/topic/myCourseTable/', o={credentials:'same-origin'};
+ fetch(base+'getXndXqList.do',o).then(function(r){return r.json();}).then(function(a){
+   if(!a.success) throw 0; var x=a.nowXnxq.xndxq;
+   return fetch(base+'getCourseInfo.do?xndxq='+encodeURIComponent(x),o)
+     .then(function(r){return r.json();}).then(function(b){
+       if(!b.success) throw 0; b.xndxq=x; window.__dc=JSON.stringify(b);});
+ }).catch(function(){window.__dc='';}).then(function(){window.__dcBusy=0;});
+ return 'started';})()"""
+PKU_READY_JS = ("location.host=='portal.pku.edu.cn' && location.pathname.indexOf('/publicQuery/')==0"
+                " && location.pathname.indexOf('login.jsp')<0 && document.readyState=='complete'")
+PKU_WEEKS = {"每周": "all", "单周": "odd", "双周": "even"}
+PKU_DAYS = ["mon", "tue", "wed", "thu", "fri"]
+PLACE_HINT = re.compile(r"(场|馆|楼|教|室|中心|院)")
+
+
+def parse_pku_cell(cell):
+    """门户 课表 한 칸의 HTML → [{title, room, week, exam}] (한 칸에 여러 과목일 수 있다)."""
+    text = html.unescape(re.sub(r"<[^>]+>", "", re.sub(r"<br\s*/?>", "\n", cell or "")))
+    out, cur = [], None
+    for line in (ln.strip() for ln in text.split("\n")):
+        if not line:
+            continue
+        if line.startswith("上课信息"):
+            if cur is None:
+                continue
+            info = line.split("：", 1)[-1]
+            note = info.split("备注：", 1)[1].strip() if "备注：" in info else ""
+            m = re.search(r"(每周|单周|双周)\s*(.*)", re.split(r"教师[：:]", info)[0])
+            if m:
+                cur["week"], cur["room"] = PKU_WEEKS[m.group(1)], m.group(2).strip()
+            if not cur["room"] and note and PLACE_HINT.search(note.split()[0]):
+                cur["room"] = note.split()[0]          # 예: 备注：五四网球场  自带球拍
+        elif line.startswith("考试信息"):
+            m = re.search(r"(\d{4})(\d\d)(\d\d)(?:\s*星期.)?\s*(\S*)", line.split("：", 1)[-1])
+            if cur is not None and m:
+                cur["exam"] = ("%s-%s-%s" % m.group(1, 2, 3), m.group(4))
+        else:
+            cur = {"title": re.sub(r"\((主|辅)\)$", "", line).strip(), "room": "",
+                   "week": "all", "exam": None}
+            out.append(cur)
+    return [c for c in out if c["title"]]
+
+
+def parse_pku_table(resp):
+    """getCourseInfo.do 응답 → ({(요일, 교시): [과목…]}, 시간표에 못 넣은 수업 수(주말))."""
+    slots, weekend = {}, 0
+    for i, row in enumerate((resp or {}).get("course") or [], 1):
+        for di, key in enumerate(PKU_DAYS):
+            got = parse_pku_cell((row.get(key) or {}).get("courseName"))
+            if got and i <= PERIODS:
+                slots[(di, i)] = got
+        for key in ("sat", "sun"):
+            weekend += len(parse_pku_cell((row.get(key) or {}).get("courseName")))
+    return slots, weekend
+
+
+def pku_login(out_path, lang="en"):
+    """(별도 프로세스) 门户 로그인 창을 띄우고, 로그인되면 课表 JSON 을 out_path 에 쓴다.
+    비밀번호는 북대 로그인 페이지에 사용자가 직접 넣는다. 이 코드는 보지 않는다.
+    쿠키는 남기지 않는다(private_mode)."""
+    import webview
+    win = webview.create_window(TEXT.get(lang, TEXT["en"])["pku_login_title"], PKU_LOGIN,
+                                width=1100, height=800)
+
+    def work():
+        last = None
+        end = time.time() + 900                       # 15분 안에 로그인하지 않으면 닫는다
+        while time.time() < end:
+            time.sleep(1.5)
+            try:
+                where = win.evaluate_js("location.host + location.pathname.split(';')[0]")
+                if where != last:                     # 어디까지 왔는지 (세션 ID·토큰은 남기지 않음)
+                    log("门户 로그인 창: %s" % where)
+                    last = where
+                if not win.evaluate_js(PKU_READY_JS):
+                    continue                          # 아직 로그인 중이거나 페이지를 읽는 중
+                result = win.evaluate_js("window.__dc")
+                if result is None:
+                    win.evaluate_js(PKU_FETCH_JS)     # 받기 시작 (이미 받는 중이면 무시)
+                    continue
+            except Exception:
+                return                                # 사용자가 창을 닫았다
+            if result:
+                with open(out_path, "w", encoding="utf-8") as f:
+                    f.write(result)
+                win.destroy()
+                return
+            win.evaluate_js("window.__dc=null")       # 실패: 잠시 뒤 다시
+        win.destroy()
+    webview.start(work, private_mode=True)
+    return 0 if os.path.exists(out_path) else 2
+
+
 # ---------- 파일 ----------
 
 def log(msg):
@@ -847,6 +985,7 @@ class DeskCal(tk.Tk):
         self.tt, self.tt_ok = load_json(TT_FILE, {})
         self.courses, self.cs_ok = load_json(COURSE_FILE, {})
         self.conf, _ = load_json(CONF_FILE, {})
+        self.normalize_exam_dates()
         self.lang = self.conf.get("lang") if self.conf.get("lang") in TEXT else "en"
         FONT = pick_font(self, self.lang)
         self.theme = self.conf.get("theme") if self.conf.get("theme") in THEMES else "dark"
@@ -931,6 +1070,7 @@ class DeskCal(tk.Tk):
                       "clock": self.after(30000, self.clock_tick)}
         start_stall_watch(self)
         if not self.float_mode:
+            self.init_autostart()
             if self.autostart:          # 로그온 때는 하던 일을 가로채지 않고 바탕화면에
                 self._z = "bottom"
                 self.lower_to_desktop()
@@ -1715,11 +1855,22 @@ class DeskCal(tk.Tk):
                         if col not in colors:
                             colors.append(col)
                 cy = min(ny + f_day * 1.25 + r, yb - r - 3)
-                for k, col in enumerate(colors[:4]):
+                # 시험·과제 마감은 네모, 일정은 동그라미 (시험이 먼저)
+                exams = []
+                for _, title, _ in self.exams_on(day):
+                    col = self.dot_color(self.course_color(title))
+                    if col not in exams:
+                        exams.append(col)
+                marks = [("sq", col) for col in exams] + [("dot", col) for col in colors]
+                for k, (shape, col) in enumerate(marks[:4]):
                     cx = x0 + pad + r + k * (r * 2 + self.px(4))
-                    if cx + r < x1 - 3:
+                    if cx + r >= x1 - 3:
+                        break
+                    if shape == "sq":
+                        c.create_rectangle(cx - r, cy - r, cx + r, cy + r, fill=col, outline="")
+                    else:
                         c.create_oval(cx - r, cy - r, cx + r, cy + r, fill=col, outline="")
-                if done_only and self.events.get(key_of(day)):
+                if done_only and self.events.get(key_of(day)) and not exams:
                     cx = x0 + pad + r            # 그 날 할 일을 다 끝냄
                     c.create_oval(cx - r, cy - r, cx + r, cy + r, fill="", outline=DIM)
 
@@ -2258,6 +2409,8 @@ class DeskCal(tk.Tk):
         self.exam_box = tk.Frame(self.panel, bg=CARD)
         self.exam_box.pack(fill="x")
         self.build_exams()
+        self.button(self.panel, self.t("pku_import"), self.import_pku, "plain", 10
+                    ).pack(side="bottom", anchor="w", pady=(self.px(10), 0))
 
     def build_exams(self):
         for w in self.exam_box.winfo_children():
@@ -2501,7 +2654,10 @@ class DeskCal(tk.Tk):
             warn.bind("<Button-1>", lambda _: self.reload_data())
 
         items = self.events.get(key_of(d), [])
-        if not items:
+        exams = self.exams_on(d)
+        for k, title, tm in exams:
+            self.make_exam_row(k, title, tm)
+        if not items and not exams:
             tk.Label(self.panel, text=self.t("no_events"), bg=CARD, fg=DIM,
                      font=self.f(12), anchor="w").pack(fill="x", pady=(0, self.px(4)))
         for i, it in enumerate(items):
@@ -2528,6 +2684,66 @@ class DeskCal(tk.Tk):
         for w in kids:
             w.bind("<Enter>", lambda _: paint(HOVER), add="+")
             w.bind("<Leave>", leave, add="+")
+
+    # ---------- 시험 (시간표의 과목 정보를 달력에서도 보여준다) ----------
+
+    def normalize_exam_dates(self):
+        """예전 버전은 시험 날짜를 '11-09' 처럼 연도 없이 적게 했다. 연도를 붙여 정리해
+        둔다 (지난 날짜면 내년으로 본다 — parse_date 와 같은 규칙)."""
+        changed = 0
+        for info in self.courses.values():
+            for k in EXAM_KEYS:
+                v = info.get(k + "_date")
+                d = parse_date(v) if v else None
+                if d and v != d.isoformat():
+                    info[k + "_date"] = d.isoformat()
+                    changed += 1
+        if changed and self.cs_ok:
+            save_json(COURSE_FILE, self.courses)
+            log("시험 날짜 %d개를 연도가 붙은 형식으로 정리" % changed)
+
+    def exams_on(self, day):
+        """그 날의 시험·과제 마감 [(종류, 과목, 시간)]. courses.json 을 그대로 읽으므로
+        시간표에서 고치면 달력에도 바로 반영된다."""
+        return [(k, title, info.get(k + "_time", ""))
+                for title, info in sorted(self.courses.items()) for k in EXAM_KEYS
+                if parse_date(info.get(k + "_date", "")) == day]
+
+    def course_color(self, title):
+        for key in sorted(self.tt):
+            if self.tt[key].get("title") == title:
+                return pc(self.tt[key].get("color"))
+        return URGENT
+
+    def goto_course(self, title):
+        """시간표로 넘어가 그 과목의 첫 칸을 고른다 (시험 날짜는 거기서 고친다)."""
+        cells = sorted((int(a), int(b)) for a, b in
+                       (key.split("-") for key, it in self.tt.items()
+                        if it.get("title") == title))
+        if cells:
+            self.tt_sel = cells[0]
+        self.set_view("tt")
+
+    def make_exam_row(self, kind, title, tm):
+        row = tk.Frame(self.panel, bg=CARD, cursor="hand2")
+        row.pack(fill="x", pady=self.px(1))
+        box = self.px(26)
+        mark = tk.Canvas(row, width=box, height=box, bg=CARD, highlightthickness=0)
+        mark.pack(side="left", padx=(self.px(2), 0))
+        m, r = box * 0.5, box * 0.2
+        mark.create_rectangle(m - r, m - r, m + r, m + r, outline="",
+                              fill=self.dot_color(self.course_color(title)))
+        if tm:
+            tk.Label(row, text=tm, bg=CARD, fg=MUTED, font=self.f(11)
+                     ).pack(side="right", padx=(self.px(4), self.px(8)))
+        tk.Label(row, text="%s · %s" % (self.t("exam_" + kind), title), bg=CARD, fg=FG,
+                 font=self.f(13, True), anchor="w", justify="left",
+                 wraplength=self.panel_w - self.px(90), pady=self.px(4)
+                 ).pack(side="left", fill="x", expand=True, padx=(self.px(6), 0))
+        for w in [row] + list(row.winfo_children()):
+            w.bind("<Button-1>", lambda e, t=title: self.goto_course(t))
+        self.tip(row, self.t("tip_exam"))
+        self.hoverable(row)
 
     def make_row(self, idx, it):
         row = tk.Frame(self.panel, bg=CARD)
@@ -2634,7 +2850,7 @@ class DeskCal(tk.Tk):
                     # 시험 종류를 앞에 둔다. 과목명이 길어 잘릴 때 '期中'이 잘리면 안 된다.
                     rows.append((d, "%s · %s" % (self.t("exam_%s_s" % k), title),
                                  info.get(k + "_time", ""),
-                                 URGENT if k != "asg" else SOON))
+                                 self.course_color(title)))
         if not rows:
             return
         rows.sort(key=lambda r: (r[0], r[2] or ""))
@@ -2877,11 +3093,12 @@ class DeskCal(tk.Tk):
         self.radio(wk, self.t("set_odd"), odd, lambda: self.set_week_kind(True))
         self.radio(wk, self.t("set_even"), not odd, lambda: self.set_week_kind(False))
         m.add_cascade(label=self.t("parity"), menu=wk)
+        m.add_command(label=self.t("pku_import"), command=self.import_pku)
 
         m.add_command(label=self.t("pin_top") if self.pinned else self.t("pin_desk"),
                       command=self.toggle_pin)
         on = autostart_enabled()
-        self.radio(m, self.t("autostart"), on, lambda: set_autostart(not on))
+        self.radio(m, self.t("autostart"), on, lambda: self.set_autostart_pref(not on))
         m.add_separator()
         m.add_command(label=self.t("open_data"),
                       command=lambda: subprocess.Popen(["explorer", APP_DIR]))
@@ -2897,6 +3114,16 @@ class DeskCal(tk.Tk):
                           command=lambda c=col, i=idx: self.apply_color(i, c))
         self.popup(m, e)
 
+    def init_autostart(self):
+        """처음 켤 때는 '윈도우 시작 시 실행'을 켜 둔다. 메뉴에서 끈 뒤에는 다시 켜지 않는다."""
+        if "autostart" not in self.conf:
+            self.set_autostart_pref(True)
+
+    def set_autostart_pref(self, on):
+        set_autostart(on)
+        self.conf["autostart"] = on            # 사용자가 고른 값을 기억한다
+        self.save_conf()
+
     def toggle_pin(self):
         self.pinned = not self.pinned
         self.attributes("-topmost", not self.pinned)
@@ -2906,6 +3133,75 @@ class DeskCal(tk.Tk):
         else:
             user32.SetWindowPos(self.hwnd, HWND_TOP, 0, 0, 0, 0, SWP_SHOW)
         self.save_conf()
+
+    # ---------- 북대 门户에서 가져오기 ----------
+
+    def import_pku(self):
+        """로그인 창을 별도 프로세스로 띄운다 (웹 창과 Tk 는 한 프로세스에서 같이 못 돈다)."""
+        if getattr(self, "_pku_proc", None) and self._pku_proc.poll() is None:
+            return
+        if not FROZEN and not importlib.util.find_spec("webview"):
+            tkmsg.showinfo("DeskCal", self.t("pku_need_webview"), parent=self)
+            return
+        out = os.path.join(tempfile.gettempdir(), "deskcal_pku_%d.json" % os.getpid())
+        if os.path.exists(out):
+            os.remove(out)
+        cmd = [sys.executable] + ([] if FROZEN else [os.path.abspath(__file__)])
+        self._pku_proc = subprocess.Popen(cmd + ["--pku-login", out, self.lang])
+        self._pku_out = out
+        if self.view != "tt":
+            self.set_view("tt")
+        self.set_status("pku_waiting")
+        self._jobs["pku"] = self.after(1000, self.pku_wait)
+
+    def pku_wait(self):
+        if self._pku_proc.poll() is None:
+            self._jobs["pku"] = self.after(1000, self.pku_wait)
+            return
+        try:
+            with open(self._pku_out, encoding="utf-8") as f:
+                resp = json.load(f)
+            os.remove(self._pku_out)
+        except (OSError, ValueError):
+            tkmsg.showinfo("DeskCal", self.t("pku_failed"), parent=self)
+            return
+        self.apply_pku(resp)
+
+    def apply_pku(self, resp):
+        """가져온 课表를 시간표에 넣는다. 같은 과목은 원래 색을 유지하고, 그 과목이 있던
+        옛 칸은 지운다(옮겨진 수업). 직접 넣은 다른 수업은 그대로 둔다."""
+        slots, skipped = parse_pku_table(resp)
+        if not slots:
+            tkmsg.showinfo("DeskCal", self.t("pku_empty"), parent=self)
+            return
+        self.tt_commit()
+        self.push_undo()
+        titles = {c["title"] for cs in slots.values() for c in cs}
+        colors = {}
+        for it in self.tt.values():
+            colors.setdefault(it.get("title"), it.get("color"))
+        used = [colors[t] for t in titles if colors.get(t)]
+        free = [c for c in PALETTE if c not in used] or PALETTE
+        for k in [k for k, it in self.tt.items() if it.get("title") in titles]:
+            del self.tt[k]
+        for (di, p), cs in sorted(slots.items()):
+            c = cs[0]
+            skipped += len(cs) - 1                   # 한 칸에는 한 과목만 넣을 수 있다
+            if not colors.get(c["title"]):
+                colors[c["title"]] = free[len([t for t in colors if t in titles]) % len(free)]
+            self.tt[self.tt_key(di, p)] = {"title": c["title"], "room": c["room"],
+                                           "color": colors[c["title"]], "week": c["week"]}
+            if c["exam"] and not self.courses.get(c["title"], {}).get("fin_date"):
+                info = self.courses.setdefault(c["title"], {})   # 직접 적어둔 날짜는 그대로
+                info["fin_date"], info["fin_time"] = c["exam"]
+        self.save_tt()
+        self.save_courses()
+        self.render()
+        n_cells = sum(1 for _ in slots)
+        log("门户 课表 가져옴: %d과목, %d칸, 제외 %d" % (len(titles), n_cells, skipped))
+        tkmsg.showinfo("DeskCal", self.t(
+            "pku_done", n=len(titles), c=n_cells,
+            extra=self.t("pku_skipped", k=skipped) if skipped else ""), parent=self)
 
     def quit_app(self):
         self.tt_commit()
@@ -2964,6 +3260,9 @@ def start_stall_watch(app):
 
 
 if __name__ == "__main__":
+    if "--pku-login" in sys.argv:            # 门户 로그인 창 (위젯이 띄우는 별도 프로세스)
+        i = sys.argv.index("--pku-login")
+        sys.exit(pku_login(sys.argv[i + 1], sys.argv[i + 2] if len(sys.argv) > i + 2 else "en"))
     DPI_MODE = set_dpi_awareness()
     os.makedirs(APP_DIR, exist_ok=True)
     if already_running():

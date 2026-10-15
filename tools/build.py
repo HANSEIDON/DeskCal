@@ -6,6 +6,7 @@ Steps: create an isolated build environment (.build-venv) with the pinned PyInst
 draw the icon, write the exe version info, bundle deskcal.py + fonts into a folder
 (DeskCal/DeskCal.exe + DeskCal/_internal), then zip it and print the SHA-256.
 """
+import glob
 import hashlib
 import os
 import re
@@ -72,7 +73,7 @@ def main():
         "--distpath", out, "--workpath", os.path.join(BUILD, "work"),
         "--specpath", BUILD, os.path.join(ROOT, "deskcal.py"))
     app = os.path.join(out, "DeskCal")
-    for name in ("README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"):
+    for name in ("README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.md"):
         shutil.copy(os.path.join(ROOT, name), app)
     # License texts of everything bundled, in one visible folder (see THIRD_PARTY_NOTICES.md)
     lic = os.path.join(app, "licenses")
@@ -85,6 +86,18 @@ def main():
                       (os.path.join(ROOT, "fonts", "OFL-LICENSE.txt"),
                        "NotoSansCJK-OFL-LICENSE.txt")):
         shutil.copy(src, os.path.join(lic, name))
+    site = os.path.join(VENV, "Lib", "site-packages")      # pywebview and what it needs
+    for pkg in ("pywebview", "pythonnet", "clr_loader", "bottle", "cffi", "pycparser",
+                "typing_extensions"):
+        for info in glob.glob(os.path.join(site, pkg + "-*.dist-info")):
+            for src in glob.glob(os.path.join(info, "licenses", "LICENSE*")):
+                shutil.copy(src, os.path.join(lic, "%s-LICENSE.txt" % pkg))
+    with open(os.path.join(lic, "WebView2-NOTICE.txt"), "w", encoding="utf-8") as f:
+        f.write("The PKU portal sign-in window uses Microsoft Edge WebView2. pywebview ships the\n"
+                "WebView2 SDK libraries (Microsoft.Web.WebView2.*.dll, WebView2Loader.dll),\n"
+                "redistributable under the Microsoft WebView2 SDK license:\n"
+                "https://www.nuget.org/packages/Microsoft.Web.WebView2/\n"
+                "The WebView2 Runtime itself is part of Windows and is not bundled.\n")
     with open(os.path.join(lic, "PyInstaller-LICENSE.txt"), "w", encoding="utf-8") as f:
         f.write("DeskCal.exe starts through the PyInstaller bootloader, licensed under the\n"
                 "GPL 2.0 with an exception that allows distributing bundled programs under\n"
