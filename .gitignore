@@ -1,0 +1,10 @@
+# Personal data, settings and logs (created at runtime)
+data/
+error.log
+__pycache__/
+*.pyc
+
+# exe build (tools/build.py)
+build/
+dist/
+.build-venv/
