@@ -489,6 +489,10 @@ check(len(lines) == 2 and lines[0].endswith("-") and lines[0][:-1] + lines[1] ==
       "띄어쓰기 없는 긴 영어 단어는 하이픈으로: %r" % lines)
 check(app.wrap2("中国神话研究", 20, app.measure("中国神话", 20, True), True) == ["中国神话", "研究"],
       "중국어는 글자 단위 그대로")
+for name, cut_at in (("高等数学（B）", "高等数学（"), ("体育（匹克球）", "体育（匹克")):
+    got = app.wrap2(name, 20, app.measure(cut_at, 20, True), True)
+    check(len(got) == 2 and got[1].startswith("（") and not got[0].endswith("（"),
+          "괄호는 통째로 다음 줄로: %r" % got)
 app.destroy()
 
 # ------------------------------------------------------------------

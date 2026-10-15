@@ -1771,6 +1771,14 @@ class DeskCal(tk.Tk):
             while cut > 2 and self.measure(text[:cut] + "-", px, bold) > max_w:
                 cut -= 1
             return [text[:cut] + "-", self.fit(text[cut:], px, max_w, bold)]
+        else:
+            # 중국어 줄바꿈 규칙: 괄호 부분은 통째로 다음 줄로 (高等数学 / （B）),
+            # 여는 괄호로 줄을 끝내거나 닫는 문장부호로 줄을 시작하지 않는다.
+            p = max(text.rfind(o, 0, cut) for o in "（(《【「")
+            if p > 0 and p >= cut // 2:
+                cut = p
+            while cut > 1 and (text[cut - 1] in "（(《【「" or text[cut] in "）)，。、》】」：；！？"):
+                cut -= 1
         first, rest = text[:cut].rstrip(), text[cut:].lstrip()
         return [first, self.fit(rest, px, max_w, bold)] if rest else [first]
 
