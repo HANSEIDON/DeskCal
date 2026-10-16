@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.3 — 2026-10-16
+
+### Changed
+
+- **Importing from the PKU portal is paused.** The import signed in through the portal's
+  existing sign-in registration, and the PKU Computing Center has told us other apps may
+  not reuse it. The button now explains that DeskCal is waiting for the university's
+  official permission. The import will return once it's approved. Versions 1.1.0–1.1.2,
+  which include the old import, are no longer offered for download.
+- The release no longer bundles pywebview, so the download is about 4 MB smaller.
+
 ## 1.1.2 — 2026-10-16
 
 ### Fixes

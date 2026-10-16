@@ -5,7 +5,6 @@ import ctypes
 import datetime as dt
 import glob
 import html
-import importlib.util
 import json
 import os
 import queue
@@ -14,7 +13,6 @@ import shutil
 import struct
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import traceback
@@ -23,7 +21,7 @@ import tkinter.font as tkfont
 import tkinter.messagebox as tkmsg
 import winreg
 
-__version__ = "1.1.2"
+__version__ = "1.1.3"
 HERE = os.path.dirname(os.path.abspath(__file__))
 FROZEN = getattr(sys, "frozen", False)          # PyInstaller 로 묶은 exe 로 실행 중
 RES_DIR = getattr(sys, "_MEIPASS", HERE)        # 함께 묶인 파일(글꼴)이 있는 곳
@@ -491,13 +489,10 @@ TEXT = {
         "glass_off": "단색", "now": "지금", "next": "다음",
         "autostart": "윈도우 시작 시 실행",
         "pku_import": "북대 门户에서 시간표 가져오기",
-        "pku_login_title": "북대 门户 로그인 — 로그인하면 시간표를 가져와요",
-        "pku_waiting": "열린 창에서 로그인해 주세요 (계속 로딩만 되면 VPN을 끄고 다시 시도)",
         "pku_done": "{n}개 과목 · {c}칸을 가져왔어요{extra}\n색·이름은 지금처럼 고칠 수 있고, Ctrl+Z로 되돌릴 수 있어요.",
         "pku_skipped": "\n(주말·겹친 수업 {k}개는 넣지 않았어요)",
         "pku_empty": "가져올 수업을 찾지 못했어요.",
-        "pku_failed": "로그인 창이 닫혀서 가져오지 못했어요.",
-        "pku_need_webview": "로그인 창을 띄우려면 먼저 설치가 필요해요:\n\npip install pywebview",
+        "pku_paused": "북대 门户에서 시간표 가져오기는 지금은 지원하지 않아요.\n\n학교 측의 정식 허가를 기다리고 있어요. 허가가 나면 업데이트로 다시 제공할게요.\n그동안은 시간표 칸을 눌러 직접 입력해 주세요.",
         "open_data": "데이터 폴더 열기", "quit": "종료",
     },
     "en": {
@@ -552,13 +547,10 @@ TEXT = {
         "glass_off": "Solid", "now": "Now", "next": "Next",
         "autostart": "Start with Windows",
         "pku_import": "Import timetable from PKU portal",
-        "pku_login_title": "PKU portal sign-in — your timetable is imported after you sign in",
-        "pku_waiting": "Sign in in the new window (if it keeps loading, turn off your VPN and retry)",
         "pku_done": "Imported {n} courses, {c} periods.{extra}\nYou can still edit colors and names. Ctrl+Z undoes the import.",
         "pku_skipped": "\n({k} weekend or overlapping classes were left out.)",
         "pku_empty": "No classes were found.",
-        "pku_failed": "The sign-in window was closed before the timetable was imported.",
-        "pku_need_webview": "The sign-in window needs pywebview. Install it first:\n\npip install pywebview",
+        "pku_paused": "Importing from the PKU portal isn't available right now.\n\nWe're waiting for official permission from the university. Once it's approved, the import will return in an update.\nUntil then, click a cell in the timetable to add classes by hand.",
         "open_data": "Open data folder", "quit": "Quit",
     },
     "zh": {
@@ -611,13 +603,10 @@ TEXT = {
         "glass_off": "纯色", "now": "现在", "next": "下节",
         "autostart": "开机自动启动",
         "pku_import": "从北大门户导入课表",
-        "pku_login_title": "登录北大门户 — 登录后自动导入课表",
-        "pku_waiting": "请在弹出的窗口中登录（一直加载的话，请关闭 VPN 后重试）",
         "pku_done": "已导入 {n} 门课、{c} 节。{extra}\n颜色和名称仍可修改，Ctrl+Z 可撤销导入。",
         "pku_skipped": "\n（周末或时间冲突的 {k} 门课未导入）",
         "pku_empty": "没有找到课程。",
-        "pku_failed": "登录窗口已关闭，未能导入课表。",
-        "pku_need_webview": "需要先安装 pywebview 才能打开登录窗口：\n\npip install pywebview",
+        "pku_paused": "从北大门户导入课表功能目前暂不支持。\n\n正在等待学校的正式许可，获批后会通过更新重新提供。\n在此之前，请点击课表格子手动添加课程。",
         "open_data": "打开数据文件夹", "quit": "退出",
     },
 }
@@ -777,30 +766,11 @@ def set_autostart(on):
         log("윈도우 시작 시 실행 설정 실패:\n" + traceback.format_exc())
 
 
-# ---------- 북대 门户 课表 가져오기 ----------
-# 门户 课表 페이지(publicQuery/#/myCourseTable)는 로그인한 뒤 아래 두 주소에서 JSON 을
-# 받아 그린다. course[i] 가 (i+1)교시 줄이고 mon..sun 의 courseName 이 칸의 HTML 이다:
+# ---------- 북대 课表 읽기 ----------
+# 门户에서 가져오기는 학교 허가를 기다리며 멈춰 두었다 (계산센터: 다른 앱의 통합 로그인
+# 등록을 빌려 쓰면 안 된다). 아래는 课表 형식을 읽고 시간표에 합치는 부분으로, 허가를
+# 받아 공식 경로로 다시 열 때 그대로 쓴다. 课表 한 칸(courseName)의 형식:
 #   과목명(主)<br>上课信息：1-16周 每周 三教305  教师：…  备注：…<br>考试信息：20261230 星期三 下午
-PKU_PAGE = "https://portal.pku.edu.cn/publicQuery/#/myCourseTable"
-# 课表 페이지(publicQuery)는 门户와 따로 로그인한다. 로그인 전에 열면 로딩만 하므로,
-# 통합 로그인(IAAA)에서 publicQuery 용으로 로그인하고 publicQuery/ssoLogin.do 로 돌아온다.
-PKU_LOGIN = ("https://iaaa.pku.edu.cn/iaaa/oauth.jsp?appID=portalPublicQuery&appName="
-             "%E5%8C%97%E4%BA%AC%E5%A4%A7%E5%AD%A6%E6%A0%A1%E5%86%85%E4%BF%A1%E6%81%AF"
-             "%E9%97%A8%E6%88%B7&redirectUrl=https%3A%2F%2Fportal.pku.edu.cn%2FpublicQuery"
-             "%2FssoLogin.do%3FmoduleID%3DmyCourseTable")
-# 페이지를 멈추지 않게 비동기로 받아 window.__dc 에 둔다 (null=받는 중, ''=실패).
-PKU_FETCH_JS = r"""(function(){
- if(window.__dcBusy) return 'busy'; window.__dcBusy=1; window.__dc=null;
- var base='/publicQuery/ctrl/topic/myCourseTable/', o={credentials:'same-origin'};
- fetch(base+'getXndXqList.do',o).then(function(r){return r.json();}).then(function(a){
-   if(!a.success) throw 0; var x=a.nowXnxq.xndxq;
-   return fetch(base+'getCourseInfo.do?xndxq='+encodeURIComponent(x),o)
-     .then(function(r){return r.json();}).then(function(b){
-       if(!b.success) throw 0; b.xndxq=x; window.__dc=JSON.stringify(b);});
- }).catch(function(){window.__dc='';}).then(function(){window.__dcBusy=0;});
- return 'started';})()"""
-PKU_READY_JS = ("location.host=='portal.pku.edu.cn' && location.pathname.indexOf('/publicQuery/')==0"
-                " && location.pathname.indexOf('login.jsp')<0 && document.readyState=='complete'")
 PKU_WEEKS = {"每周": "all", "单周": "odd", "双周": "even"}
 PKU_DAYS = ["mon", "tue", "wed", "thu", "fri"]
 PLACE_HINT = re.compile(r"(场|馆|楼|教|室|中心|院)")
@@ -845,43 +815,6 @@ def parse_pku_table(resp):
         for key in ("sat", "sun"):
             weekend += len(parse_pku_cell((row.get(key) or {}).get("courseName")))
     return slots, weekend
-
-
-def pku_login(out_path, lang="en"):
-    """(별도 프로세스) 门户 로그인 창을 띄우고, 로그인되면 课表 JSON 을 out_path 에 쓴다.
-    비밀번호는 북대 로그인 페이지에 사용자가 직접 넣는다. 이 코드는 보지 않는다.
-    쿠키는 남기지 않는다(private_mode)."""
-    import webview
-    win = webview.create_window(TEXT.get(lang, TEXT["en"])["pku_login_title"], PKU_LOGIN,
-                                width=1100, height=800)
-
-    def work():
-        last = None
-        end = time.time() + 900                       # 15분 안에 로그인하지 않으면 닫는다
-        while time.time() < end:
-            time.sleep(1.5)
-            try:
-                where = win.evaluate_js("location.host + location.pathname.split(';')[0]")
-                if where != last:                     # 어디까지 왔는지 (세션 ID·토큰은 남기지 않음)
-                    log("门户 로그인 창: %s" % where)
-                    last = where
-                if not win.evaluate_js(PKU_READY_JS):
-                    continue                          # 아직 로그인 중이거나 페이지를 읽는 중
-                result = win.evaluate_js("window.__dc")
-                if result is None:
-                    win.evaluate_js(PKU_FETCH_JS)     # 받기 시작 (이미 받는 중이면 무시)
-                    continue
-            except Exception:
-                return                                # 사용자가 창을 닫았다
-            if result:
-                with open(out_path, "w", encoding="utf-8") as f:
-                    f.write(result)
-                win.destroy()
-                return
-            win.evaluate_js("window.__dc=null")       # 실패: 잠시 뒤 다시
-        win.destroy()
-    webview.start(work, private_mode=True)
-    return 0 if os.path.exists(out_path) else 2
 
 
 # ---------- 파일 ----------
@@ -3206,35 +3139,8 @@ class DeskCal(tk.Tk):
     # ---------- 북대 门户에서 가져오기 ----------
 
     def import_pku(self):
-        """로그인 창을 별도 프로세스로 띄운다 (웹 창과 Tk 는 한 프로세스에서 같이 못 돈다)."""
-        if getattr(self, "_pku_proc", None) and self._pku_proc.poll() is None:
-            return
-        if not FROZEN and not importlib.util.find_spec("webview"):
-            tkmsg.showinfo("DeskCal", self.t("pku_need_webview"), parent=self)
-            return
-        out = os.path.join(tempfile.gettempdir(), "deskcal_pku_%d.json" % os.getpid())
-        if os.path.exists(out):
-            os.remove(out)
-        cmd = [sys.executable] + ([] if FROZEN else [os.path.abspath(__file__)])
-        self._pku_proc = subprocess.Popen(cmd + ["--pku-login", out, self.lang])
-        self._pku_out = out
-        if self.view != "tt":
-            self.set_view("tt")
-        self.set_status("pku_waiting")
-        self._jobs["pku"] = self.after(1000, self.pku_wait)
-
-    def pku_wait(self):
-        if self._pku_proc.poll() is None:
-            self._jobs["pku"] = self.after(1000, self.pku_wait)
-            return
-        try:
-            with open(self._pku_out, encoding="utf-8") as f:
-                resp = json.load(f)
-            os.remove(self._pku_out)
-        except (OSError, ValueError):
-            tkmsg.showinfo("DeskCal", self.t("pku_failed"), parent=self)
-            return
-        self.apply_pku(resp)
+        """학교의 정식 허가를 받을 때까지 멈춰 두었다. 누르면 안내만 한다."""
+        tkmsg.showinfo("DeskCal", self.t("pku_paused"), parent=self)
 
     def apply_pku(self, resp):
         """가져온 课表를 시간표에 넣는다. 같은 과목은 원래 색을 유지하고, 그 과목이 있던
@@ -3329,9 +3235,6 @@ def start_stall_watch(app):
 
 
 if __name__ == "__main__":
-    if "--pku-login" in sys.argv:            # 门户 로그인 창 (위젯이 띄우는 별도 프로세스)
-        i = sys.argv.index("--pku-login")
-        sys.exit(pku_login(sys.argv[i + 1], sys.argv[i + 2] if len(sys.argv) > i + 2 else "en"))
     DPI_MODE = set_dpi_awareness()
     os.makedirs(APP_DIR, exist_ok=True)
     if already_running():

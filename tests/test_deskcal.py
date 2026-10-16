@@ -724,7 +724,11 @@ app, d = fresh(files={"timetable.json": {
     "3-9": {"title": "高等数学（B）", "room": "", "color": deskcal.PALETTE[5], "week": "all"},
     "2-6": {"title": "직접 넣은 수업", "room": "", "color": deskcal.PALETTE[2], "week": "all"}},
     "courses.json": {"程序设计": {"fin_date": "2027-01-12", "fin_time": "09:00"}}})
-deskcal.tkmsg.showinfo = lambda *a, **k: None
+shown = []
+deskcal.tkmsg.showinfo = lambda title, msg, **k: shown.append(msg)
+app.import_pku()
+check(shown == [app.t("pku_paused")] and app.tt == json.load(open(deskcal.TT_FILE, encoding="utf-8")),
+      "가져오기 버튼은 지금은 안내만 띄우고 아무것도 바꾸지 않음")
 app.apply_pku(resp)
 tt = json.load(open(deskcal.TT_FILE, encoding="utf-8"))
 check(tt["0-1"]["color"] == deskcal.PALETTE[5] and "3-9" not in tt,

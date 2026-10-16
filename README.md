@@ -24,8 +24,6 @@ and needs no account.
 
 - 📅 **Calendar with notes**: click a day and type. Color it, tick it off, edit in place.
 - ⏰ **Upcoming deadlines** with D-day badges. Orange within a week, red for today and tomorrow.
-- 🎓 **One-click import from PKU portal**: sign in once and your 课表 fills in, with rooms,
-  单双周 and final exam dates.
 - 🗓️ **Timetable**: Mon–Fri, 12 periods on PKU's schedule. The current class is highlighted.
 - 🔁 **Odd / even weeks** (单周 / 双周). Classes not meeting this week are shown dashed.
 - 📝 **Exams on the calendar**: midterm, final and project deadlines per course appear on the
@@ -61,7 +59,7 @@ and needs no account.
 Each release lists the zip's SHA-256 checksum. In PowerShell:
 
 ```powershell
-Get-FileHash .\DeskCal-1.1.2-windows-x64.zip
+Get-FileHash .\DeskCal-1.1.3-windows-x64.zip
 ```
 
 The hash should match the one on the release page.
@@ -73,29 +71,21 @@ The hash should match the one on the release page.
 2. Download this repo (**Code → Download ZIP**) or `git clone https://github.com/HANSEIDON/DeskCal.git`.
 3. Double-click **`DeskCal.bat`**. No packages to install.
 
-The PKU portal import opens a sign-in window, which needs one extra package when you run
-from source: `pip install pywebview`. The exe already includes it.
-
 ### Start with Windows
 
 DeskCal starts with Windows by default, quietly behind your windows. To stop that, turn off
 **≡ → Start with Windows**. The setting is an entry in your user's `Run` registry key (no
 admin rights needed), and turning it off removes the entry.
 
-## 🎓 Import from PKU portal
+## 🎓 Importing from PKU portal (paused)
 
-1. In **Timetable**, click **Import timetable from PKU portal** (also in the **≡** menu).
-2. Sign in on PKU's own sign-in page in the window that opens.
-3. The window closes by itself, and your classes appear in the timetable.
+Versions 1.1.0–1.1.2 could import your 课表 from the PKU portal. That import signed in
+through the portal's existing sign-in registration, and the PKU Computing Center has told us
+other apps may not reuse it. **The import is paused from 1.1.3 on**, and those versions are no
+longer offered for download.
 
-What gets imported: course names, rooms, weekdays and periods, odd/even weeks, and final exam
-dates. Courses you already have keep their colors, exam dates you entered yourself are never
-overwritten, and classes you added by hand stay. Ctrl+Z undoes the whole import.
-
-> [!NOTE]
-> You type your password into PKU's sign-in page, not into DeskCal. DeskCal never sees or
-> stores it, keeps no cookies after the window closes, and only reads your own course table
-> once. If the window keeps loading, check your network or VPN and try again.
+We're applying for official permission. Once it's approved, the import will return in an
+update. Until then, click a cell in **Timetable** to add your classes.
 
 ## 🖱️ How to use
 

@@ -1,16 +1,7 @@
-# Only needed to build DeskCal.exe (tools/build.py). The app itself needs only the
-# standard library; pywebview is used for the PKU portal sign-in window.
+# Only needed to build DeskCal.exe (tools/build.py). The app itself has no dependencies.
 pyinstaller==6.22.3
 pyinstaller-hooks-contrib==2026.8
 altgraph==0.17.5
 packaging==26.3
 pefile==2024.8.26
 pywin32-ctypes==0.2.3
-pywebview==6.2.1
-pythonnet==3.2.1
-clr_loader==0.3.1
-bottle==0.13.4
-proxy_tools==0.1.0
-cffi==2.1.1
-pycparser==3.11
-typing_extensions==4.16.0
