@@ -23,7 +23,7 @@ import tkinter.font as tkfont
 import tkinter.messagebox as tkmsg
 import winreg
 
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 HERE = os.path.dirname(os.path.abspath(__file__))
 FROZEN = getattr(sys, "frozen", False)          # PyInstaller 로 묶은 exe 로 실행 중
 RES_DIR = getattr(sys, "_MEIPASS", HERE)        # 함께 묶인 파일(글꼴)이 있는 곳
@@ -322,6 +322,25 @@ def make_glass_bounded(x, y, w, h, tint, alpha, timeout=1.5):
 
 
 DESK_K = 4          # 드래그를 놓았을 때 색 검사용으로 바탕화면 유리를 1/4 로 줄여 둔다
+
+
+TRANSCODED = os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows", "Themes",
+                          "TranscodedWallpaper")
+
+
+def wallpaper_sig():
+    """바탕화면 그림이 바뀌었는지 알아보는 값. Windows 추천(Spotlight)·슬라이드쇼는 그림이
+    바뀔 때 TranscodedWallpaper 를 새로 쓴다. 알려주는 경로는 늦게 바뀌기도 해서 둘 다 본다."""
+    buf = ctypes.create_unicode_buffer(520)
+    user32.SystemParametersInfoW(0x0073, 520, buf, 0)       # SPI_GETDESKWALLPAPER
+    sig = [buf.value]
+    for p in (buf.value, TRANSCODED):
+        try:
+            st = os.stat(p)
+            sig.append((st.st_mtime_ns, st.st_size))
+        except OSError:
+            sig.append(None)
+    return tuple(sig)
 
 
 def desk_rect():
@@ -627,6 +646,8 @@ user32.GetClassNameW.argtypes = [_H, ctypes.c_wchar_p, ctypes.c_int]
 user32.GetWindowThreadProcessId.argtypes = [_H, ctypes.POINTER(ctypes.c_ulong)]
 user32.IsWindowVisible.argtypes = [_H]
 user32.GetWindowRect.argtypes = [_H, ctypes.POINTER(RECT)]
+user32.SystemParametersInfoW.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p,
+                                         ctypes.c_uint]
 user32.SetWindowPos.argtypes = [_H, _H, ctypes.c_int, ctypes.c_int,
                                 ctypes.c_int, ctypes.c_int, ctypes.c_uint]
 user32.ShowWindow.argtypes = [_H, ctypes.c_int]
@@ -1027,6 +1048,8 @@ class DeskCal(tk.Tk):
         self._desk_busy = False
         self._glass_alpha = None
         self._glass_sig = None
+        self._wall_sig = wallpaper_sig()       # 바탕화면 그림 (바뀌면 유리를 다시 만든다)
+        self._wall_changed = None
         self.periods = parse_periods(self.conf.get("periods") or PERIOD_TIMES)
         self._last_input = time.time()        # 마지막으로 손댄 시각 (오늘로 되돌리기용)
         self._editing = False
@@ -1068,7 +1091,11 @@ class DeskCal(tk.Tk):
             self.bind_all(ev, self.touch, add="+")
         self._jobs = {"z": self.after(300, self.z_tick),
                       "dog": self.after(60000, self.watchdog),
-                      "clock": self.after(30000, self.clock_tick)}
+                      "clock": self.after(30000, self.clock_tick),
+                      "wall": self.after(5000, self.wall_tick),
+                      # 로그온 직후엔 Windows 가 바탕화면 그림을 조금 늦게 바꾼다. 한 번 더 본다.
+                      "glass15": self.after(15000, self.refresh_glass),
+                      "glass60": self.after(60000, self.refresh_glass)}
         start_stall_watch(self)
         if not self.float_mode:
             self.init_autostart()
@@ -1444,16 +1471,36 @@ class DeskCal(tk.Tk):
 
     def refresh_glass(self):
         """바탕화면이 바뀌었으면(슬라이드쇼 등) 유리 배경을 다시 만든다."""
-        if not self.glass_img:
+        if not self.glass_img or self._drag or self.busy():
             return
         x, y = self.window_pos()
         W, H = self.w(), self.h()
-        raw = make_glass_bounded(x, y, W, H, BASE, GLASS[self.glass])
+        raw = make_glass_bounded(x, y, W, H, BASE, self._glass_alpha or GLASS[self.glass])
         if raw:
             sig = tuple(int(v) // 6 for v in region_avg(raw, W, 0, 0, W, H))
             if sig != self._glass_sig:
                 log("바탕화면이 바뀌어 유리 배경을 다시 만든다")
+                self._desk = None              # 드래그용 바탕화면 사진도 낡았다
                 self.build()
+
+    def wall_tick(self):
+        """바탕화면 그림이 바뀌면 (Windows 추천·슬라이드쇼) 유리를 새 그림으로 다시 만든다.
+        바뀌는 애니메이션이 끝나도록 2초 기다리고, 글을 쓰는 중이면 끝날 때까지 미룬다."""
+        try:
+            sig = wallpaper_sig()
+            if sig != self._wall_sig:
+                self._wall_sig = sig              # 드래그용 바탕화면 사진은 이제 낡았다
+                self._wall_changed = time.time()
+            if (self._wall_changed and time.time() - self._wall_changed >= 2
+                    and not self._drag and not self.busy()):
+                self._wall_changed = None
+                if self.glass_img:
+                    log("바탕화면 그림이 바뀌어 유리를 다시 만든다")
+                    self.build()
+        except Exception:
+            log("wall_tick 예외:\n" + traceback.format_exc())
+        self._jobs["wall"] = self.after(5000 if not self._wall_changed else 1000,
+                                        self.wall_tick)
 
     def watchdog(self):
         try:
@@ -1515,10 +1562,12 @@ class DeskCal(tk.Tk):
             return                    # 기존 유리를 지우지 않는다 (단색으로 보이는 것 방지)
         # 유리 위에 바로 그리는 글자(달력 숫자 등)가 가장 밝은 곳(라이트 모드는 가장
         # 어두운 곳)에서도 4.5:1 이상 대비가 나도록, 모자라면 덮개를 더 진하게 한다.
-        for _ in range(5):
+        # 평균으로도 7:1 이 되게 한다 (밝은 바탕화면에서 '선명하게'도 읽기 편하도록).
+        for _ in range(6):
             pts = region_samples(raw, W, 0, 0, W, H, 30)
             worst = min(contrast(FG, p) for p in pts)
-            if worst >= 4.5 or alpha >= 0.92:
+            avg = contrast(FG, region_avg(raw, W, 0, 0, W, H))
+            if (worst >= 4.5 and avg >= 7) or alpha >= 0.92:
                 break
             alpha = min(0.92, alpha + 0.06)
             raw2 = make_glass_bounded(x, y, W, H, BASE, alpha)
@@ -1614,7 +1663,7 @@ class DeskCal(tk.Tk):
     def desk_ready(self):
         """미리 만든 바탕화면 유리가 지금 색·투명도·화면 크기에 맞는지."""
         d = self._desk
-        return bool(d and d["key"] == (self._glass_alpha, BASE, desk_rect()))
+        return bool(d and d["key"] == (self._glass_alpha, BASE, desk_rect(), self._wall_sig))
 
     def prepare_desk(self):
         """바탕화면 전체 유리를 뒤에서 만든다. 그림 받기·흐리기는 다른 스레드에서,
@@ -1626,7 +1675,7 @@ class DeskCal(tk.Tk):
             self._desk_job = self.after(1000, self.prepare_desk)   # 다른 촬영 중이면 나중에
             return
         self._desk_busy = True
-        key = (self._glass_alpha, BASE, desk_rect())
+        key = (self._glass_alpha, BASE, desk_rect(), self._wall_sig)
 
         def work():
             try:
@@ -1658,7 +1707,7 @@ class DeskCal(tk.Tk):
                 self.schedule_desk(30000)
             return
         self._desk_poll, self._desk_busy = None, False
-        if key[:2] != (self._glass_alpha, BASE):
+        if key[:2] != (self._glass_alpha, BASE) or key[3] != self._wall_sig:
             self.schedule_desk(500)            # 만드는 사이 테마·투명도가 바뀌었다: 새로
             return
         try:
@@ -3027,6 +3076,9 @@ class DeskCal(tk.Tk):
             return                                 # 버튼 위에서는 끌지 않는다
         self._drag = (e.x_root - self.winfo_x(), e.y_root - self.winfo_y())
         self._drag_from = (self.winfo_x(), self.winfo_y())
+        sig = wallpaper_sig()
+        if sig != self._wall_sig:
+            self._wall_sig, self._wall_changed = sig, time.time()
         if self.glass_img:
             if self.desk_ready():
                 self.use_desk()

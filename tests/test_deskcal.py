@@ -625,6 +625,16 @@ while time.time() < end and not app.desk_ready():
 check(app.desk_ready() and not app._desk_busy,
       "유리를 만드는 중에 화면을 다시 그려도 드래그용 유리가 만들어짐 (예전엔 영영 멈춤)")
 app.set_view("cal")
+real_sig = deskcal.wallpaper_sig
+deskcal.wallpaper_sig = lambda: ("새 바탕화면",)        # Windows 추천이 그림을 바꿨다
+old_img = app.glass_img
+app.wall_tick()
+check(not app.desk_ready(), "바탕화면이 바뀌면 드래그용 사진을 바로 버림")
+check(app.glass_img is old_img, "바뀌는 애니메이션 동안(2초)은 아직 다시 만들지 않음")
+app._wall_changed = time.time() - 3
+app.wall_tick()
+check(app.glass_img is not old_img and app._wall_changed is None, "2초 뒤 유리를 새 그림으로 다시 만듦")
+deskcal.wallpaper_sig = real_sig
 app.set_glass("off")
 check(app.glass_img is None and json.load(open(deskcal.CONF_FILE))["glass"] == "off",
       "'단색'으로 바꾸면 유리 없이 저장됨")

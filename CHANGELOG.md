@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.2 — 2026-10-16
+
+### Fixes
+
+- The frosted glass now follows wallpaper changes. With Windows Spotlight or a slideshow,
+  the glass (and the glass shown while dragging) kept showing the previous wallpaper until
+  DeskCal was restarted. DeskCal now notices the new wallpaper within a few seconds,
+  including the change Windows makes shortly after you sign in.
+
+### Improvements
+
+- Better text contrast on bright wallpapers: the glass gets just dark enough that text
+  stays easy to read, measured against each user's own wallpaper.
+
 ## 1.1.1 — 2026-10-15
 
 ### Fixes
