@@ -635,6 +635,14 @@ app._wall_changed = time.time() - 3
 app.wall_tick()
 check(app.glass_img is not old_img and app._wall_changed is None, "2초 뒤 유리를 새 그림으로 다시 만듦")
 deskcal.wallpaper_sig = real_sig
+real_dirs = deskcal.desktop_dirs
+fake_desk = tempfile.mkdtemp(prefix="deskcal_desktop_")
+deskcal.desktop_dirs = lambda: [fake_desk]
+before = deskcal.wallpaper_sig()
+time.sleep(0.05)
+open(os.path.join(fake_desk, "새 폴더.txt"), "w").close()
+check(deskcal.wallpaper_sig() != before, "바탕화면에 파일·폴더가 생기면 바뀐 것으로 알아챔")
+deskcal.desktop_dirs = real_dirs
 app.set_glass("off")
 check(app.glass_img is None and json.load(open(deskcal.CONF_FILE))["glass"] == "off",
       "'단색'으로 바꾸면 유리 없이 저장됨")

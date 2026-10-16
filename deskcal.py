@@ -328,13 +328,24 @@ TRANSCODED = os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows",
                           "TranscodedWallpaper")
 
 
+def desktop_dirs():
+    """바탕화면 아이콘이 들어 있는 폴더 (내 바탕화면 · 공용 바탕화면)."""
+    out = []
+    for csidl in (0x10, 0x19):            # CSIDL_DESKTOPDIRECTORY, CSIDL_COMMON_DESKTOPDIRECTORY
+        buf = ctypes.create_unicode_buffer(520)
+        if ctypes.windll.shell32.SHGetFolderPathW(None, csidl, None, 0, buf) == 0:
+            out.append(buf.value)
+    return out
+
+
 def wallpaper_sig():
-    """바탕화면 그림이 바뀌었는지 알아보는 값. Windows 추천(Spotlight)·슬라이드쇼는 그림이
-    바뀔 때 TranscodedWallpaper 를 새로 쓴다. 알려주는 경로는 늦게 바뀌기도 해서 둘 다 본다."""
+    """바탕화면 모습이 바뀌었는지 알아보는 값. Windows 추천(Spotlight)·슬라이드쇼는 그림이
+    바뀔 때 TranscodedWallpaper 를 새로 쓴다. 알려주는 경로는 늦게 바뀌기도 해서 둘 다 본다.
+    바탕화면 폴더는 아이콘이 생기거나 지워지거나 이름이 바뀌면 변경 시각이 바뀐다."""
     buf = ctypes.create_unicode_buffer(520)
     user32.SystemParametersInfoW(0x0073, 520, buf, 0)       # SPI_GETDESKWALLPAPER
     sig = [buf.value]
-    for p in (buf.value, TRANSCODED):
+    for p in [buf.value, TRANSCODED] + desktop_dirs():
         try:
             st = os.stat(p)
             sig.append((st.st_mtime_ns, st.st_size))

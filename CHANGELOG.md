@@ -8,6 +8,8 @@
   the glass (and the glass shown while dragging) kept showing the previous wallpaper until
   DeskCal was restarted. DeskCal now notices the new wallpaper within a few seconds,
   including the change Windows makes shortly after you sign in.
+- Adding, removing or renaming files and folders on the desktop also refreshes the glass,
+  since desktop icons show through it.
 
 ### Improvements
 
