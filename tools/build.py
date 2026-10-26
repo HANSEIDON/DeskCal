@@ -64,7 +64,8 @@ def main():
         "--standalone",
         "--output-filename=DeskCal.exe",
         "--windows-console-mode=disable",
-        "--include-package=tkinter",
+        "--enable-plugin=tk-inter",                 # tkinter 가 런타임에 동작하려면 필수
+        "--windows-icon-from-ico=" + icon,          # 작업표시줄·exe 아이콘
         # Fonts + icon
         "--include-data-dir=" + os.path.join(ROOT, "fonts") + "=fonts",
         "--include-data-file=" + os.path.join(ROOT, "docs", "icon.png") + "=icon.png",

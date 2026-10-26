@@ -170,7 +170,7 @@ DeskCal is built to sit on your desktop all day without you noticing it.
 | Memory | about 73 MB |
 | CPU while idle | 0.4 % of one core |
 | Network | none, it never goes online |
-| Download / on disk | 38.6 MB zip / 59 MB folder, of which 32 MB is the CJK font |
+| Download / on disk | 39.9 MB zip / 65 MB folder, of which 32 MB is the CJK font |
 
 Measured on Windows 11 with an Intel Core Ultra 7 258V and 32 GB RAM, using a fresh copy
 with no data and the default glass background. Choosing **Background → Solid** uses a
