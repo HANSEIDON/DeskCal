@@ -42,7 +42,7 @@ and needs no account.
 
 ![Timetable view, dark theme](docs/timetable-dark.png)
 
-| Light theme |
+| Light theme | 中文 |
 | --- | --- |
 | ![Calendar view, light theme](docs/calendar-light.png) | ![Timetable in Chinese, light theme](docs/timetable-light-zh.png) |
 
