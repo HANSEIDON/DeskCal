@@ -87,29 +87,21 @@ admin rights needed), and turning it off removes the entry.
 
 ## 🎓 Import your PKU timetable
 
-![Registered PKU ISOP app](https://img.shields.io/badge/PKU%20ISOP-registered%20%26%20approved%20app-A51C30?style=flat-square)
+![Registered PKU ISOP app](https://img.shields.io/badge/PKU%20ISOP-registered%20app-A51C30?style=flat-square)
 
 A fresh install starts with an empty timetable — but you don't have to type in every class.
-DeskCal is a **registered and approved app on Peking University's data-sharing platform
-(数据共享开放服务平台, ISOP)**, so it can load your official 课表 straight from the university.
+DeskCal is a **registered app on Peking University's data-sharing platform
+(数据共享开放服务平台, ISOP)**, so it loads your official 课表 straight from the university,
+verified by your PKU email. Open **Timetable → Import school timetable** and follow along:
 
-| Fresh install | After import |
+| 1 · Enter your student ID | 2 · Enter the code from your PKU email |
 | :---: | :---: |
-| ![Empty timetable on first run](docs/import-empty-dark.png) | ![Timetable filled in after importing](docs/import-filled-dark.png) |
+| ![Student ID prompt over the app](docs/import-ask-dark.png) | ![PKU email code prompt over the app](docs/import-code-dark.png) |
+| **3 · Review what will change, tick to apply** | **4 · Your timetable is filled in** |
+| ![Review changes before applying](docs/import-review-dark.png) | ![Timetable filled in after importing](docs/import-filled-dark.png) |
 
-**How it works:**
-
-1. **Timetable → Import school timetable.**
-2. Enter your student ID — a verification code is sent to your **PKU email**.
-3. Enter the code, then review what changed and tick which classes to apply. Nothing is
-   overwritten until you confirm.
-
-| 1 · Student ID | 2 · Code from your PKU email | 3 · Review & apply |
-| :---: | :---: | :---: |
-| ![Enter your student ID](docs/import-ask-dark.png) | ![Enter the code from your PKU email](docs/import-code-dark.png) | ![Review changes before applying](docs/import-review-dark.png) |
-
-Everything goes through the official ISOP platform, which verifies you by your PKU email.
-Access needs the PKU network (use the campus VPN off campus), only your own timetable is read,
+Nothing is overwritten until you confirm. Everything goes through the official ISOP platform,
+which needs the PKU network (use the campus VPN off campus); only your own timetable is read,
 and nothing is uploaded.
 
 > [!NOTE]
