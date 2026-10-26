@@ -10,7 +10,7 @@
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 [![License](https://img.shields.io/github/license/HANSEIDON/DeskCal)](LICENSE)
 
-[![Import your 课表 via PKU ISOP](https://img.shields.io/badge/课表%20import-PKU%20ISOP-A51C30?style=for-the-badge&logoColor=white)](#-import-your-pku-timetable)
+[![Import your PKU timetable](https://img.shields.io/badge/new_in_1.2.0-import_your_PKU_timetable-A51C30?style=flat-square)](#-import-your-pku-timetable)
 
 [**⬇️ Download for Windows**](https://github.com/HANSEIDON/DeskCal/releases/latest)
 
@@ -87,8 +87,6 @@ admin rights needed), and turning it off removes the entry.
 
 ## 🎓 Import your PKU timetable
 
-![PKU ISOP](https://img.shields.io/badge/PKU%20ISOP-registered%20app-A51C30)
-
 The downloaded app can pull your official 课表 straight from Peking University, so you don't
 have to type each class in by hand.
 
@@ -96,6 +94,10 @@ have to type each class in by hand.
 2. Enter your student ID. A verification code is sent to your PKU email.
 3. Enter the code. DeskCal lists what differs from your current timetable, and you tick which
    changes to apply — nothing is overwritten until you confirm.
+
+| 1 · Enter your student ID | 2 · Review, then apply |
+| :---: | :---: |
+| ![Student ID prompt](docs/import-ask-dark.png) | ![Review changes before applying](docs/import-review-dark.png) |
 
 It reads through the university's 数据共享开放服务平台 (ISOP) using an app registered and
 approved for this purpose. Access needs the PKU network (use the campus VPN off campus). Only
