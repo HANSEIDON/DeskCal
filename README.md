@@ -10,6 +10,8 @@
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 [![License](https://img.shields.io/github/license/HANSEIDON/DeskCal)](LICENSE)
 
+[![Import your 课表 via PKU ISOP](https://img.shields.io/badge/课表%20import-PKU%20ISOP-A51C30?style=for-the-badge&logoColor=white)](#-import-your-pku-timetable)
+
 [**⬇️ Download for Windows**](https://github.com/HANSEIDON/DeskCal/releases/latest)
 
 </div>
@@ -18,10 +20,16 @@ DeskCal sits on your Windows desktop, just above the wallpaper. Deadlines, exams
 选课 dates and your weekly timetable are always one glance away. It runs fully offline
 and needs no account.
 
+> **New in 1.2.0 — [import your official 课表](#-import-your-pku-timetable).** DeskCal is a
+> registered app on Peking University's data-sharing platform (ISOP), so it can load your real
+> timetable and exam dates straight from the university instead of you typing them in.
+
 ![Calendar view, dark theme](docs/calendar-dark.png)
 
 ## ✨ Features
 
+- 🎓 **Import your PKU timetable** straight from the university through the official ISOP
+  platform — review what changed, then apply ([details](#-import-your-pku-timetable)).
 - 📅 **Calendar with notes**: click a day and type. Color it, tick it off, edit in place.
 - ⏰ **Upcoming deadlines** with D-day badges. Orange within a week, red for today and tomorrow.
 - 🗓️ **Timetable**: Mon–Fri, 12 periods on PKU's schedule. The current class is highlighted.
