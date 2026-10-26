@@ -21,7 +21,7 @@ import winreg
 
 __version__ = "1.2.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
-FROZEN = getattr(sys, "frozen", False)          # PyInstaller 로 묶은 exe 로 실행 중
+FROZEN = getattr(sys, "frozen", False) or "__compiled__" in globals()   # exe(Nuitka/PyInstaller)
 RES_DIR = getattr(sys, "_MEIPASS", HERE)        # 함께 묶인 파일(글꼴)이 있는 곳
 
 
