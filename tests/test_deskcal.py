@@ -691,54 +691,18 @@ check(app.winfo_x() == good, "화면 안이면 위치를 건드리지 않음")
 app.destroy()
 
 # ------------------------------------------------------------------
-section("북대 门户 课表 가져오기")
+section("시험 · 달력 · 시간표")
 
-
-def cell(name, info, exam=""):
-    return {"courseName": '<div><span>%s(主)<br>上课信息：%s  教师：某某 <br>考试信息：%s</span></div>'
-                          % (name, info, exam)}
-
-
-EMPTY = {"courseName": ""}
-row = lambda **kw: {k: kw.get(k, EMPTY) for k in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")}
-resp = {"success": True, "course": [
-    row(mon=cell("高等数学（B）", "1-16周 每周 理教107", "20270105 星期二 上午")),
-    row(mon=cell("高等数学（B）", "1-16周 每周 理教107", "20270105 星期二 上午"),
-        fri={"courseName": cell("程序设计", "1-16周 单周 理教215", "20270110 星期日 上午")["courseName"] + "<br>"
-             + cell("实验课", "1-16周 双周 理教216")["courseName"]}),
-    row(tue={"courseName": '体育(主)<br>上课信息：1-16周 每周   教师：某某 备注：五四网球场  自带球拍<br>考试信息：'},
-        sat=cell("周末课", "1-16周 每周 二教101")),
-]}
-got = deskcal.parse_pku_cell(resp["course"][0]["mon"]["courseName"])
-check(got == [{"title": "高等数学（B）", "room": "理教107", "week": "all",
-               "exam": ("2027-01-05", "上午")}], "칸 하나: 과목·강의실·주차·시험 %r" % got)
-check([c["week"] for c in deskcal.parse_pku_cell(resp["course"][1]["fri"]["courseName"])]
-      == ["odd", "even"], "한 칸에 두 과목 (单周 / 双周)")
-check(deskcal.parse_pku_cell(resp["course"][2]["tue"]["courseName"])[0]["room"] == "五四网球场",
-      "강의실이 비면 备注에서 장소를 찾음")
-slots, weekend = deskcal.parse_pku_table(resp)
-check(set(slots) == {(0, 1), (0, 2), (4, 2), (1, 3)} and weekend == 1, "칸 위치 · 주말 수업 셈")
-
-app, d = fresh(files={"timetable.json": {
-    "0-1": {"title": "高等数学（B）", "room": "", "color": deskcal.PALETTE[5], "week": "all"},
-    "3-9": {"title": "高等数学（B）", "room": "", "color": deskcal.PALETTE[5], "week": "all"},
-    "2-6": {"title": "직접 넣은 수업", "room": "", "color": deskcal.PALETTE[2], "week": "all"}},
-    "courses.json": {"程序设计": {"fin_date": "2027-01-12", "fin_time": "09:00"}}})
-shown = []
-deskcal.tkmsg.showinfo = lambda title, msg, **k: shown.append(msg)
-app.import_pku()
-check(shown == [app.t("pku_paused")] and app.tt == json.load(open(deskcal.TT_FILE, encoding="utf-8")),
-      "가져오기 버튼은 지금은 안내만 띄우고 아무것도 바꾸지 않음")
-app.apply_pku(resp)
-tt = json.load(open(deskcal.TT_FILE, encoding="utf-8"))
-check(tt["0-1"]["color"] == deskcal.PALETTE[5] and "3-9" not in tt,
-      "같은 과목은 원래 색 유지, 옮겨진 옛 칸은 정리")
-check(tt["2-6"]["title"] == "직접 넣은 수업", "직접 넣은 다른 수업은 그대로")
-check(tt["4-2"]["week"] == "odd" and tt["1-3"]["room"] == "五四网球场", "주차·강의실 저장")
-check(json.load(open(deskcal.COURSE_FILE, encoding="utf-8"))["高等数学（B）"]
-      == {"fin_date": "2027-01-05", "fin_time": "上午"}, "시험 일정은 期末考试 칸으로")
-check(json.load(open(deskcal.COURSE_FILE, encoding="utf-8"))["程序设计"]["fin_date"] == "2027-01-12",
-      "직접 적어둔 시험 날짜는 덮어쓰지 않음")
+# 가져오기(ISOP) 기능은 공개 소스에서 빠졌다. 아래 기능 테스트는 시간표·과목을 직접 넣고 확인한다.
+app, d = fresh(files={
+    "timetable.json": {
+        "0-1": {"title": "高等数学（B）", "room": "理教107", "color": deskcal.PALETTE[5], "week": "all"},
+        "0-2": {"title": "高等数学（B）", "room": "理教107", "color": deskcal.PALETTE[5], "week": "all"},
+        "1-3": {"title": "体育", "room": "五四网球场", "color": deskcal.PALETTE[2], "week": "all"},
+        "4-2": {"title": "程序设计", "room": "理教215", "color": deskcal.PALETTE[1], "week": "odd"}},
+    "courses.json": {
+        "高等数学（B）": {"fin_date": "2027-01-05", "fin_time": "上午"},
+        "程序设计": {"fin_date": "2027-01-12", "fin_time": "09:00"}}})
 
 app.courses["옛 과목"] = {"mid_date": "%02d-%02d" % (app.today.month, app.today.day)}
 check(app.exams_on(app.today) == [("mid", "옛 과목", "")], "예전 형식 날짜(연도 없음)도 달력에 나옴")
@@ -761,9 +725,137 @@ row.event_generate("<Button-1>")
 app.update()
 check(app.view == "tt" and app.tt_sel == (0, 1), "누르면 시간표의 그 과목 칸으로 (%s %s)"
       % (app.view, app.tt_sel))
+app.set_view("tt")
+
+# 같은 색 일정이 여러 개여도 일정마다 점, 넘치면 +N
+many_day = dt.date(2027, 1, 12)
+app.events[deskcal.key_of(many_day)] = [{"title": "일%d" % i, "color": deskcal.PALETTE[6], "done": False}
+                                        for i in range(3)]
+app.set_view("cal")
+app.shown, app.selected = many_day.replace(day=1), app.today
+app.render()
+app.update()
+
+
+def cell_items(day):
+    ri = next(r for r, w in enumerate(app.weeks) if day in w)
+    ci = app.weeks[ri].index(day)
+    x0, y0 = app.gut + ci * app.cw, app.hh + ri * app.ch
+    return [i for i in app.cal.find_overlapping(x0 + 1, y0 + 1, x0 + app.cw - 1, y0 + app.ch - 1)]
+
+
+dots = [i for i in cell_items(many_day) if app.cal.type(i) == "oval"]
+check(len(dots) == 3, "같은 색 일정 3개면 점 3개 (%d개)" % len(dots))
+app.events[deskcal.key_of(many_day)] *= 4                  # 12개
+app.render()
+app.update()
+texts = [app.cal.itemcget(i, "text") for i in cell_items(many_day) if app.cal.type(i) == "text"]
+check(any(t.startswith("+") for t in texts), "칸에 다 못 그리면 +N 표시: %r" % texts)
+del app.events[deskcal.key_of(many_day)]
+app.set_view("tt")
+
+# 시험이 있는 날에도 일정을 다 끝내면 빈 동그라미
+ring_day = dt.date(2027, 1, 5)
+app.events[deskcal.key_of(ring_day)] = [{"title": "끝낸 일", "color": deskcal.PALETTE[0], "done": True}]
+app.set_view("cal")
+app.shown, app.selected = ring_day.replace(day=1), ring_day
+app.render()
+app.update()
+rings = [i for i in app.cal.find_all() if app.cal.type(i) == "oval"
+         and app.cal.itemcget(i, "fill") == "" and app.cal.itemcget(i, "outline") == deskcal.DIM]
+check(rings, "시험과 같은 날이어도 일정을 다 끝내면 빈 동그라미가 뜸")
+del app.events[deskcal.key_of(ring_day)]
+app.set_view("tt")
+
+# 합쳐 보이는 수업은 블록 전체를 고친다
+app.set_view("tt")
+app.tt_sel = (0, 2)                       # 高等数学（B）월 1–2교시 중 2교시를 골라도
+app.render_panel()
+app.tt_room.delete(0, "end")
+app.tt_room.insert(0, "三教999")
+app.tt_commit()
+tt = json.load(open(deskcal.TT_FILE, encoding="utf-8"))
+check(tt["0-1"]["room"] == tt["0-2"]["room"] == "三教999", "강의실을 고치면 1–2교시 둘 다 바뀜")
+app.tt_set_color(deskcal.PALETTE[6])
+tt = json.load(open(deskcal.TT_FILE, encoding="utf-8"))
+check(tt["0-1"]["color"] == tt["0-2"]["color"] == deskcal.PALETTE[6], "색도 블록 전체")
 app.undo()
-check(json.load(open(deskcal.TT_FILE, encoding="utf-8"))["3-9"]["title"] == "高等数学（B）",
-      "Ctrl+Z 로 가져오기 전체를 되돌림")
+app.undo()
+
+# 여러 칸 선택: 드래그 · Ctrl+클릭
+app.set_view("tt")
+app.update()
+
+
+def at(di, p):
+    return (int(app.tgut + (di + 0.5) * app.tcw), int(app.thh + (p - 0.5) * app.tch))
+
+
+x, y = at(2, 9)
+app.cal.event_generate("<ButtonPress-1>", x=x, y=y)
+x, y = at(3, 10)
+app.cal.event_generate("<B1-Motion>", x=x, y=y, state=0x100)
+app.cal.event_generate("<ButtonRelease-1>", x=x, y=y)
+app.update()
+check(app.tt_multi == {(2, 9), (2, 10), (3, 9), (3, 10)}, "드래그로 사각형 범위 선택: %r" % app.tt_multi)
+x, y = at(4, 12)
+app.cal.event_generate("<Control-Button-1>", x=x, y=y, state=0x4)
+app.update()
+check((4, 12) in app.tt_multi and len(app.tt_multi) == 5, "Ctrl+클릭으로 칸 더하기")
+app.tt_title.insert(0, "세미나")
+app.tt_room.insert(0, "二教101")
+app.tt_commit()
+tt = json.load(open(deskcal.TT_FILE, encoding="utf-8"))
+check(all(tt.get(k, {}).get("title") == "세미나" for k in ("2-9", "2-10", "3-9", "3-10", "4-12")),
+      "입력한 과목이 고른 칸 모두에 들어감")
+app.cal.event_generate("<Control-Button-1>", x=x, y=y, state=0x4)
+app.update()
+check((4, 12) not in app.tt_multi, "Ctrl+클릭을 다시 하면 그 칸이 빠짐")
+app.tt_delete()
+tt = json.load(open(deskcal.TT_FILE, encoding="utf-8"))
+check(not any(k in tt for k in ("2-9", "2-10", "3-9", "3-10")) and "4-12" in tt,
+      "지우기는 고른 칸만")
+app.undo()
+app.undo()
+x, y = at(0, 1)
+app.cal.event_generate("<ButtonPress-1>", x=x, y=y)
+app.cal.event_generate("<ButtonRelease-1>", x=x, y=y)
+app.update()
+check(app.tt_multi is None and app.tt_sel == (0, 1), "그냥 클릭하면 여러 칸 선택이 풀림")
+
+# 버그 재현: 수업이 섞인 범위를 드래그했다가, 아무것도 안 고치고 다른 곳을 드래그
+before = json.load(open(deskcal.TT_FILE, encoding="utf-8"))
+for a, b in ((at(0, 1), at(1, 3)), (at(3, 9), at(4, 10))):
+    app.cal.event_generate("<ButtonPress-1>", x=a[0], y=a[1])
+    app.cal.event_generate("<B1-Motion>", x=b[0], y=b[1], state=0x100)
+    app.cal.event_generate("<ButtonRelease-1>", x=b[0], y=b[1])
+    app.update()
+check(json.load(open(deskcal.TT_FILE, encoding="utf-8")) == before,
+      "여러 칸을 골랐다가 다른 곳을 골라도 수업이 지워지거나 바뀌지 않음")
+check(app.tt_title.get() == "", "수업이 섞인 범위면 입력칸을 비워 둠")
+app.tt_room.insert(0, "三教777")
+app.tt_commit()
+tt = json.load(open(deskcal.TT_FILE, encoding="utf-8"))
+check(all(tt[k]["room"] == "三教777" for k in ("3-9", "3-10") if k in tt)
+      and all(k not in tt for k in ("4-9", "4-10") if k not in before),
+      "강의실만 고치면 수업이 있는 칸의 강의실만 바뀜 (빈칸에 수업을 만들지 않음)")
+app.undo()
+
+# 시험 완료 표시
+app.toggle_exam("高等数学（B）", "fin")
+check(app.exam_done("高等数学（B）", "fin"), "시험 네모를 누르면 완료")
+app.today = app.selected = dt.date(2027, 1, 1)     # 시험 날이 아닌 날을 골라야 패널과 안 섞임
+app.set_view("cal")
+labels = [w.cget("text") for w in walk(app.panel, []) if w.winfo_class() == "Label"]
+up = "%s · 高等数学（B）" % app.t("exam_fin_s")
+check(not any(t.startswith(up) for t in labels), "완료한 시험은 다가오는 일정에서 빠짐")
+app.today = dt.date.today()
+app.set_view("tt")
+app.tt_sel = (0, 1)
+app.render_panel()
+app.tt_room.insert("end", "x")
+app.tt_commit()
+check(app.exam_done("高等数学（B）", "fin"), "시간표에서 고쳐 저장해도 완료 표시가 남음")
 app.destroy()
 
 # ------------------------------------------------------------------

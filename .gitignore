@@ -8,3 +8,5 @@ __pycache__/
 build/
 dist/
 .build-venv/
+mingw.zip
+mingw*/

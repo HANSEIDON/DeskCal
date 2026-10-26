@@ -4,7 +4,6 @@ import calendar
 import ctypes
 import datetime as dt
 import glob
-import html
 import json
 import os
 import queue
@@ -18,10 +17,9 @@ import time
 import traceback
 import tkinter as tk
 import tkinter.font as tkfont
-import tkinter.messagebox as tkmsg
 import winreg
 
-__version__ = "1.1.3"
+__version__ = "1.2.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 FROZEN = getattr(sys, "frozen", False)          # PyInstaller 로 묶은 exe 로 실행 중
 RES_DIR = getattr(sys, "_MEIPASS", HERE)        # 함께 묶인 파일(글꼴)이 있는 곳
@@ -458,7 +456,10 @@ TEXT = {
                      "꺼져 있습니다.\n클릭하면 다시 시도합니다.",
         "tt_read_fail": "시간표를 읽지 못해 저장이 꺼져 있습니다.",
         "tt_cell": "{wd}요일 {p}교시",
-        "tt_new": "빈 칸이에요. 과목 이름을 적으면 바로 저장돼요.",
+        "tt_new": "빈 칸이에요. 과목 이름을 적으면 바로 저장돼요. 드래그하거나 Ctrl+클릭하면 여러 칸을 한 번에 고를 수 있어요.",
+        "tt_multi": "{n}칸 선택됨",
+        "tt_multi_hint": "입력한 내용이 선택한 칸 모두에 들어가요. Ctrl+클릭으로 칸을 더하거나 뺄 수 있어요.",
+        "tt_overwrite": "다른 수업 {n}칸을 덮어써요",
         "tt_existing": "고친 내용은 자동으로 저장돼요.",
         "course": "과목", "room": "강의실", "weeks": "주차", "color": "색",
         "course_hint": "예: 고급수학", "room_hint": "예: 一教101",
@@ -466,9 +467,9 @@ TEXT = {
         "saved": "자동 저장됨", "deleted": "지웠어요 · Ctrl+Z로 되돌리기",
         "exams": "시험 · 과제 마감",
         "exams_need_title": "과목 이름을 먼저 적으면 시험·과제 날짜를 넣을 수 있어요.",
-        "exam_mid": "期中考试", "exam_fin": "期末考试", "exam_asg": "최종과제",
+        "exam_mid": "期中", "exam_fin": "期末", "exam_asg": "최종과제",
         "exam_mid_s": "期中", "exam_fin_s": "期末", "exam_asg_s": "과제 DDL",
-        "pick_date": "날짜 고르기", "time_hint": "시간·메모", "clear_date": "날짜 지우기",
+        "pick_date": "날짜 고르기", "time_hint": "시간·비고", "clear_date": "날짜 지우기",
         "btn_date": "{m}월 {d}일 ({wd})",
         "event_hint": "새 일정을 적고 Enter",
         "tip_done": "클릭: 완료 표시  ·  우클릭: 색 바꾸기",
@@ -477,22 +478,18 @@ TEXT = {
         "tip_delete": "지우기 (Ctrl+Z로 되돌리기)",
         "tip_menu": "설정 (언어 · 테마 · 크기 · 주차)",
         "tip_date": "눌러서 달력에서 날짜 고르기",
-        "tip_time": "시간(14:00 · 오후 2시 · 2pm) 또는 짧은 메모",
+        "tip_time": "시간(14:00 · 오후 2시) 또는 비고 (예: 시험, 리포트, 발표)",
         "tip_color": "새 일정에 쓸 색",
         "size": "크기",
         "sizes": ["아주 작게", "작게", "보통", "크게", "아주 크게"],
         "parity": "주차 (单/双)", "set_odd": "이번 주는 单周", "set_even": "이번 주는 双周",
-        "pin_top": "항상 위로 (창에 안 가려짐)",
-        "pin_desk": "바탕화면에 두기 (다른 창에 가려짐)",
         "lang": "언어", "theme": "테마", "dark": "다크 모드", "light": "라이트 모드",
         "glass": "배경", "glass_soft": "유리 (은은하게)", "glass_clear": "유리 (선명하게)",
         "glass_off": "단색", "now": "지금", "next": "다음",
         "autostart": "윈도우 시작 시 실행",
-        "pku_import": "북대 门户에서 시간표 가져오기",
-        "pku_done": "{n}개 과목 · {c}칸을 가져왔어요{extra}\n색·이름은 지금처럼 고칠 수 있고, Ctrl+Z로 되돌릴 수 있어요.",
-        "pku_skipped": "\n(주말·겹친 수업 {k}개는 넣지 않았어요)",
-        "pku_empty": "가져올 수업을 찾지 못했어요.",
-        "pku_paused": "북대 门户에서 시간표 가져오기는 지금은 지원하지 않아요.\n\n학교 측의 정식 허가를 기다리고 있어요. 허가가 나면 업데이트로 다시 제공할게요.\n그동안은 시간표 칸을 눌러 직접 입력해 주세요.",
+        "tip_check": "클릭해서 완료 표시 (다시 누르면 취소)",
+        "sel_all": "전체 선택", "sel_none": "선택 해제",
+        "apply_sel": "반영하기", "cancel": "취소", "ok": "확인",
         "open_data": "데이터 폴더 열기", "quit": "종료",
     },
     "en": {
@@ -515,7 +512,10 @@ TEXT = {
                      "existing file.\nClick to try again.",
         "tt_read_fail": "Couldn't read the timetable. Saving is off.",
         "tt_cell": "{wd} · Period {p}",
-        "tt_new": "Empty slot. Type a course name and it saves automatically.",
+        "tt_new": "Empty slot. Type a course name and it saves automatically. Drag or Ctrl+click to select several periods at once.",
+        "tt_multi": "{n} periods selected",
+        "tt_multi_hint": "What you enter goes into every selected period. Ctrl+click to add or remove periods.",
+        "tt_overwrite": "Overwrites {n} periods of other classes",
         "tt_existing": "Changes save automatically.",
         "course": "Course", "room": "Room", "weeks": "Weeks", "color": "Color",
         "course_hint": "e.g. Calculus", "room_hint": "e.g. Room 101",
@@ -523,7 +523,7 @@ TEXT = {
         "saved": "Saved", "deleted": "Removed · Ctrl+Z to undo",
         "exams": "Exams · Deadlines",
         "exams_need_title": "Enter a course name first to add exam and deadline dates.",
-        "exam_mid": "Midterm", "exam_fin": "Final exam", "exam_asg": "Final project",
+        "exam_mid": "Midterm", "exam_fin": "Final", "exam_asg": "Final project",
         "exam_mid_s": "Midterm", "exam_fin_s": "Final", "exam_asg_s": "Project due",
         "pick_date": "Pick a date", "time_hint": "Time", "clear_date": "Clear date",
         "btn_date": "{wdl}, {mon} {d}",
@@ -534,23 +534,19 @@ TEXT = {
         "tip_delete": "Delete (Ctrl+Z to undo)",
         "tip_menu": "Settings (language · theme · size · weeks)",
         "tip_date": "Click to pick a date from a calendar",
-        "tip_time": "A time (14:00 · 2pm) or a short note",
+        "tip_time": "A time (14:00 · 2pm) or a note (e.g. exam, report, presentation)",
         "tip_color": "Color for new events",
         "size": "Size",
         "sizes": ["Tiny", "Small", "Medium", "Large", "Huge"],
         "parity": "Odd / even week", "set_odd": "This week is odd",
         "set_even": "This week is even",
-        "pin_top": "Always on top",
-        "pin_desk": "Keep on desktop (behind windows)",
         "lang": "Language", "theme": "Theme", "dark": "Dark", "light": "Light",
         "glass": "Background", "glass_soft": "Glass (subtle)", "glass_clear": "Glass (clear)",
         "glass_off": "Solid", "now": "Now", "next": "Next",
         "autostart": "Start with Windows",
-        "pku_import": "Import timetable from PKU portal",
-        "pku_done": "Imported {n} courses, {c} periods.{extra}\nYou can still edit colors and names. Ctrl+Z undoes the import.",
-        "pku_skipped": "\n({k} weekend or overlapping classes were left out.)",
-        "pku_empty": "No classes were found.",
-        "pku_paused": "Importing from the PKU portal isn't available right now.\n\nWe're waiting for official permission from the university. Once it's approved, the import will return in an update.\nUntil then, click a cell in the timetable to add classes by hand.",
+        "tip_check": "Click to mark as done (click again to undo)",
+        "sel_all": "Select all", "sel_none": "Clear all",
+        "apply_sel": "Update selected", "cancel": "Cancel", "ok": "OK",
         "open_data": "Open data folder", "quit": "Quit",
     },
     "zh": {
@@ -572,7 +568,10 @@ TEXT = {
         "read_fail": "无法读取已保存的日程。\n为保护原文件，已暂停保存。\n点击重试。",
         "tt_read_fail": "无法读取课表，已暂停保存。",
         "tt_cell": "{wd} 第{p}节",
-        "tt_new": "空课时。输入课程名称即可自动保存。",
+        "tt_new": "空课时。输入课程名称即可自动保存。拖动或按住 Ctrl 点击可一次选择多节。",
+        "tt_multi": "已选 {n} 节",
+        "tt_multi_hint": "输入的内容会填入所有选中的课时。按住 Ctrl 点击可增减课时。",
+        "tt_overwrite": "将覆盖其他课程的 {n} 节",
         "tt_existing": "修改会自动保存。",
         "course": "课程", "room": "教室", "weeks": "周次", "color": "颜色",
         "course_hint": "例：高等数学", "room_hint": "例：一教101",
@@ -580,7 +579,7 @@ TEXT = {
         "saved": "已自动保存", "deleted": "已删除 · Ctrl+Z 撤销",
         "exams": "考试 · 作业截止",
         "exams_need_title": "先输入课程名称，才能添加考试和截止日期。",
-        "exam_mid": "期中考试", "exam_fin": "期末考试", "exam_asg": "期末大作业",
+        "exam_mid": "期中", "exam_fin": "期末", "exam_asg": "期末大作业",
         "exam_mid_s": "期中", "exam_fin_s": "期末", "exam_asg_s": "大作业DDL",
         "pick_date": "选择日期", "time_hint": "时间/备注", "clear_date": "清除日期",
         "btn_date": "{m}/{d} {wd}",
@@ -591,22 +590,18 @@ TEXT = {
         "tip_delete": "删除（Ctrl+Z 撤销）",
         "tip_menu": "设置（语言 · 主题 · 大小 · 周次）",
         "tip_date": "点击从日历中选择日期",
-        "tip_time": "时间（14:00 · 下午2点 · 2pm）或简短备注",
+        "tip_time": "时间（14:00 · 下午2点）或备注（如：考试、论文、汇报）",
         "tip_color": "新日程的颜色",
         "size": "大小",
         "sizes": ["很小", "小", "中", "大", "很大"],
         "parity": "单双周", "set_odd": "本周是单周", "set_even": "本周是双周",
-        "pin_top": "始终置顶",
-        "pin_desk": "放在桌面（会被其他窗口遮住）",
         "lang": "语言", "theme": "主题", "dark": "深色模式", "light": "浅色模式",
         "glass": "背景", "glass_soft": "毛玻璃（柔和）", "glass_clear": "毛玻璃（清透）",
         "glass_off": "纯色", "now": "现在", "next": "下节",
         "autostart": "开机自动启动",
-        "pku_import": "从北大门户导入课表",
-        "pku_done": "已导入 {n} 门课、{c} 节。{extra}\n颜色和名称仍可修改，Ctrl+Z 可撤销导入。",
-        "pku_skipped": "\n（周末或时间冲突的 {k} 门课未导入）",
-        "pku_empty": "没有找到课程。",
-        "pku_paused": "从北大门户导入课表功能目前暂不支持。\n\n正在等待学校的正式许可，获批后会通过更新重新提供。\n在此之前，请点击课表格子手动添加课程。",
+        "tip_check": "点击标记完成（再点一次取消）",
+        "sel_all": "全选", "sel_none": "取消全选",
+        "apply_sel": "更新所选", "cancel": "取消", "ok": "确定",
         "open_data": "打开数据文件夹", "quit": "退出",
     },
 }
@@ -766,57 +761,6 @@ def set_autostart(on):
         log("윈도우 시작 시 실행 설정 실패:\n" + traceback.format_exc())
 
 
-# ---------- 북대 课表 읽기 ----------
-# 门户에서 가져오기는 학교 허가를 기다리며 멈춰 두었다 (계산센터: 다른 앱의 통합 로그인
-# 등록을 빌려 쓰면 안 된다). 아래는 课表 형식을 읽고 시간표에 합치는 부분으로, 허가를
-# 받아 공식 경로로 다시 열 때 그대로 쓴다. 课表 한 칸(courseName)의 형식:
-#   과목명(主)<br>上课信息：1-16周 每周 三教305  教师：…  备注：…<br>考试信息：20261230 星期三 下午
-PKU_WEEKS = {"每周": "all", "单周": "odd", "双周": "even"}
-PKU_DAYS = ["mon", "tue", "wed", "thu", "fri"]
-PLACE_HINT = re.compile(r"(场|馆|楼|教|室|中心|院)")
-
-
-def parse_pku_cell(cell):
-    """门户 课表 한 칸의 HTML → [{title, room, week, exam}] (한 칸에 여러 과목일 수 있다)."""
-    text = html.unescape(re.sub(r"<[^>]+>", "", re.sub(r"<br\s*/?>", "\n", cell or "")))
-    out, cur = [], None
-    for line in (ln.strip() for ln in text.split("\n")):
-        if not line:
-            continue
-        if line.startswith("上课信息"):
-            if cur is None:
-                continue
-            info = line.split("：", 1)[-1]
-            note = info.split("备注：", 1)[1].strip() if "备注：" in info else ""
-            m = re.search(r"(每周|单周|双周)\s*(.*)", re.split(r"教师[：:]", info)[0])
-            if m:
-                cur["week"], cur["room"] = PKU_WEEKS[m.group(1)], m.group(2).strip()
-            if not cur["room"] and note and PLACE_HINT.search(note.split()[0]):
-                cur["room"] = note.split()[0]          # 예: 备注：五四网球场  自带球拍
-        elif line.startswith("考试信息"):
-            m = re.search(r"(\d{4})(\d\d)(\d\d)(?:\s*星期.)?\s*(\S*)", line.split("：", 1)[-1])
-            if cur is not None and m:
-                cur["exam"] = ("%s-%s-%s" % m.group(1, 2, 3), m.group(4))
-        else:
-            cur = {"title": re.sub(r"\((主|辅)\)$", "", line).strip(), "room": "",
-                   "week": "all", "exam": None}
-            out.append(cur)
-    return [c for c in out if c["title"]]
-
-
-def parse_pku_table(resp):
-    """getCourseInfo.do 응답 → ({(요일, 교시): [과목…]}, 시간표에 못 넣은 수업 수(주말))."""
-    slots, weekend = {}, 0
-    for i, row in enumerate((resp or {}).get("course") or [], 1):
-        for di, key in enumerate(PKU_DAYS):
-            got = parse_pku_cell((row.get(key) or {}).get("courseName"))
-            if got and i <= PERIODS:
-                slots[(di, i)] = got
-        for key in ("sat", "sun"):
-            weekend += len(parse_pku_cell((row.get(key) or {}).get("courseName")))
-    return slots, weekend
-
-
 # ---------- 파일 ----------
 
 def log(msg):
@@ -957,6 +901,9 @@ class DeskCal(tk.Tk):
         apply_theme(self.theme)
         self.view = self.conf.get("view", "cal")
         self.tt_sel = (0, 1)
+        self.tt_multi = None           # 드래그·Ctrl+클릭으로 고른 여러 칸 {(요일, 교시)}
+        self._tt_anchor = None
+        self._tt_base = set()
         self._draft = None
         self.exam_e = {}
         self._exam_loaded = ("", {})
@@ -970,7 +917,9 @@ class DeskCal(tk.Tk):
         self.color = pc(self.conf.get("color", PALETTE[0]))
         self.size_idx = min(max(int(self.conf.get("size", DEFAULT_SIZE)), 0), len(SIZES) - 1)
         self.float_mode = "--float" in sys.argv
-        self.pinned = False if self.float_mode else self.conf.get("pinned", True)
+        # 늘 바탕화면 바로 위에 둔다 ('항상 위' 설정은 없앴다). --float 는 테스트용.
+        self.pinned = not self.float_mode
+        self.conf.pop("pinned", None)
         self.undo_stack = []
         self._fonts = {}
         self._drag = None
@@ -1004,6 +953,15 @@ class DeskCal(tk.Tk):
                            kernel32.CreateEventW(None, False, False, SUMMON_EVENT))
 
         self.title(WIN_TITLE)
+        # 안내·확인 창 제목줄에 Tk 기본 아이콘(깃털) 대신 DeskCal 아이콘
+        for path in (os.path.join(RES_DIR, "icon.png"), os.path.join(HERE, "docs", "icon.png")):
+            if os.path.exists(path):
+                try:
+                    self._icon = tk.PhotoImage(master=self, file=path)
+                    self.iconphoto(True, self._icon)
+                except tk.TclError:
+                    pass
+                break
         self.overrideredirect(True)
         self.configure(bg=BG)
         self.dpi = max(1.0, self.winfo_fpixels("1i") / 96.0)
@@ -1408,7 +1366,7 @@ class DeskCal(tk.Tk):
                          or self.shown != self.today.replace(day=1))):
                 self.go_today()                        # 한동안 손대지 않으면 오늘로
             if self.view == "tt":
-                self.draw_tt()                         # '지금 수업' 표시를 옮긴다
+                self.tick_now()                        # '지금 수업' 표시를 옮긴다
         except Exception:
             log("clock_tick 예외:\n" + traceback.format_exc())
         self._jobs["clock"] = self.after(30000, self.clock_tick)
@@ -1422,7 +1380,8 @@ class DeskCal(tk.Tk):
         raw = make_glass_bounded(x, y, W, H, BASE, self._glass_alpha or GLASS[self.glass])
         if raw:
             sig = tuple(int(v) // 6 for v in region_avg(raw, W, 0, 0, W, H))
-            if sig != self._glass_sig:
+            # 경계에서 한 칸씩 흔들리는 건 무시한다 (괜히 전체를 다시 그리면 깜빡인다)
+            if not self._glass_sig or max(abs(a - b) for a, b in zip(sig, self._glass_sig)) > 1:
                 log("바탕화면이 바뀌어 유리 배경을 다시 만든다")
                 self._desk = None              # 드래그용 바탕화면 사진도 낡았다
                 self.build()
@@ -1570,6 +1529,9 @@ class DeskCal(tk.Tk):
         c.create_window(cx0, cy0, window=self.cal, anchor="nw")
         self.cal.bind("<Configure>", lambda _: self.draw())
         self.cal.bind("<Button-1>", self.on_click)
+        self.cal.bind("<Control-Button-1>", self.on_tt_ctrl_click)
+        self.cal.bind("<B1-Motion>", self.on_tt_drag)
+        self.cal.bind("<ButtonRelease-1>", self.on_tt_release)
         self.cal.bind("<Button-3>", self.menu)
 
         c.bind("<ButtonPress-1>", self.drag_start)
@@ -1851,27 +1813,36 @@ class DeskCal(tk.Tk):
                     col = self.dot_color(it.get("color", PALETTE[0]))
                     if not it.get("done"):
                         done_only = False
-                        if col not in colors:
-                            colors.append(col)
+                        colors.append(col)             # 같은 색이어도 일정마다 하나씩
                 cy = min(ny + f_day * 1.25 + r, yb - r - 3)
                 # 시험·과제 마감은 네모, 일정은 동그라미 (시험이 먼저)
-                exams = []
-                for _, title, _ in self.exams_on(day):
+                exams, exams_done = [], []
+                for kind, title, _ in self.exams_on(day):
                     col = self.dot_color(self.course_color(title))
-                    if col not in exams:
-                        exams.append(col)
-                marks = [("sq", col) for col in exams] + [("dot", col) for col in colors]
-                for k, (shape, col) in enumerate(marks[:4]):
+                    (exams_done if self.exam_done(title, kind) else exams).append(col)
+                all_done = done_only and bool(self.events.get(key_of(day)))
+                marks = ([("sq", col) for col in exams] + [("dot", col) for col in colors]
+                         + ([("ring", DIM)] if all_done else [])
+                         + [("sq_done", col) for col in exams_done])
+                step = r * 2 + self.px(4)
+                fit = max(1, int((x1 - 3 - (x0 + pad)) // step))
+                more = 0
+                if len(marks) > fit:                   # 다 못 그리면 마지막 자리에 +N
+                    more = len(marks) - (fit - 1)
+                    marks = marks[:fit - 1]
+                for k, (shape, col) in enumerate(marks):
                     cx = x0 + pad + r + k * (r * 2 + self.px(4))
-                    if cx + r >= x1 - 3:
-                        break
                     if shape == "sq":
                         c.create_rectangle(cx - r, cy - r, cx + r, cy + r, fill=col, outline="")
+                    elif shape == "sq_done":                 # 끝낸 시험은 빈 네모
+                        c.create_rectangle(cx - r, cy - r, cx + r, cy + r, fill="", outline=DIM)
+                    elif shape == "ring":                    # 그 날 일정을 다 끝냄
+                        c.create_oval(cx - r, cy - r, cx + r, cy + r, fill="", outline=DIM)
                     else:
                         c.create_oval(cx - r, cy - r, cx + r, cy + r, fill=col, outline="")
-                if done_only and self.events.get(key_of(day)) and not exams:
-                    cx = x0 + pad + r            # 그 날 할 일을 다 끝냄
-                    c.create_oval(cx - r, cy - r, cx + r, cy + r, fill="", outline=DIM)
+                if more:
+                    c.create_text(x0 + pad + len(marks) * step, cy, text="+%d" % more,
+                                  anchor="w", fill=MUTED, font=(FONT, -max(8, int(r * 3.2))))
 
     def on_grid_click(self, e):
         if not getattr(self, "weeks", None) or e.y < self.hh or e.x < self.gut:
@@ -2003,6 +1974,7 @@ class DeskCal(tk.Tk):
         today_col = self.today.weekday()
         state = self.period_state()
         cur_p = state[1] if state and state[0] == "now" else None
+        self._now_sig = (self.today, state[:2] if state else None)
 
         for i, d in enumerate(self.t("wd_tt")):
             x0, x1 = self.tgut + i * self.tcw, self.tgut + (i + 1) * self.tcw
@@ -2035,7 +2007,8 @@ class DeskCal(tk.Tk):
         if state and state[0] == "now" and 0 <= today_col < N_DAYS:
             y = self.thh + (state[1] - 1 + state[2]) * self.tch
             lx0 = self.tgut + today_col * self.tcw
-            c.create_line(lx0 + 2, y, lx0 + self.tcw - 2, y, fill=ACCENT, width=2)
+            c.create_line(lx0 + 2, y, lx0 + self.tcw - 2, y, fill=ACCENT, width=2,
+                          tags="nowline")
 
         # 세로로 이어진 같은 수업은 한 블록으로 묶어 글자를 한 번만 그린다.
         pad = self.px(3)
@@ -2080,12 +2053,20 @@ class DeskCal(tk.Tk):
                 c.create_text((tx0 + x1) / 2, top + i * lh, text=txt, fill=fill_c,
                               font=(FONT, -size, "bold") if bold else (FONT, -size))
 
-        di, p = self.tt_sel                     # 고른 칸 (수업이면 그 블록 전체)
-        sx0, sy0, sx1, sy1 = boxes.get((di, p)) or (
-            self.tgut + di * self.tcw + pad, self.thh + (p - 1) * self.tch + pad,
-            self.tgut + (di + 1) * self.tcw - pad, self.thh + p * self.tch - pad)
-        round_rect(c, sx0 + 2, sy0 + 2, sx1 - 2, sy1 - 2, max(2, rad - 2), fill="",
-                   outline=mix(FG, BG, 0.30), width=2)
+        if self.tt_multi:                       # 여러 칸: 칸마다 강조색 테두리
+            for di, p in self.tt_multi:
+                x0 = self.tgut + di * self.tcw + pad
+                y0 = self.thh + (p - 1) * self.tch + pad
+                round_rect(c, x0 + 1, y0 + 1, x0 + self.tcw - 2 * pad - 1,
+                           y0 + self.tch - 2 * pad - 1, max(2, rad - 2),
+                           fill="", outline=ACCENT, width=2)
+        else:
+            di, p = self.tt_sel                 # 고른 칸 (수업이면 그 블록 전체)
+            sx0, sy0, sx1, sy1 = boxes.get((di, p)) or (
+                self.tgut + di * self.tcw + pad, self.thh + (p - 1) * self.tch + pad,
+                self.tgut + (di + 1) * self.tcw - pad, self.thh + p * self.tch - pad)
+            round_rect(c, sx0 + 2, sy0 + 2, sx1 - 2, sy1 - 2, max(2, rad - 2), fill="",
+                       outline=mix(FG, BG, 0.30), width=2)
 
         # 지금 수업 (쉬는 시간이면 다음 수업)
         if state and 0 <= today_col < N_DAYS:
@@ -2099,7 +2080,8 @@ class DeskCal(tk.Tk):
                            outline=ACCENT, width=3)
                 y = self.thh + (p - 1 + frac) * self.tch     # 지금 시각 표시 점
                 lx0 = self.tgut + today_col * self.tcw
-                c.create_oval(lx0 - 4, y - 4, lx0 + 4, y + 4, fill=ACCENT, outline="")
+                c.create_oval(lx0 - 4, y - 4, lx0 + 4, y + 4, fill=ACCENT, outline="",
+                              tags="nowdot")
             else:
                 round_rect(c, bx0 - 1, by0 - 1, bx1 + 1, by1 + 1, rad + 1, fill="",
                            outline=ACCENT, width=2, dash=(4, 3))
@@ -2112,18 +2094,89 @@ class DeskCal(tk.Tk):
             c.create_text(bx1 - self.px(3) - tw / 2, by0 + self.px(3) + th / 2, text=label,
                           fill=ACCENT_INK, font=(FONT, -f_tag, "bold"))
 
-    def on_tt_click(self, e):
-        if not hasattr(self, "tcw") or e.x < self.tgut or e.y < self.thh:
-            return
+    def tt_cell_at(self, e, clamp=False):
+        if self.view != "tt" or not hasattr(self, "tcw"):
+            return None
         di = int((e.x - self.tgut) // self.tcw)
         p = int((e.y - self.thh) // self.tch) + 1
-        if 0 <= di < N_DAYS and 1 <= p <= PERIODS:
-            self.tt_commit()                   # 다른 칸으로 옮기기 전에 적던 걸 저장
-            self.tt_sel = (di, p)
+        if clamp:                              # 드래그 중엔 표 밖으로 나가도 끝 칸으로
+            return min(max(di, 0), N_DAYS - 1), min(max(p, 1), PERIODS)
+        if e.x < self.tgut or e.y < self.thh or not (0 <= di < N_DAYS and 1 <= p <= PERIODS):
+            return None
+        return di, p
+
+    def tt_selection(self):
+        """지금 고른 칸들. 여러 칸을 골랐으면 그 칸들, 아니면 고른 칸의 수업 블록."""
+        if self.tt_multi:
+            return set(self.tt_multi)
+        return {tuple(int(v) for v in k.split("-")) for k in self.block_keys()}
+
+    def tick_now(self):
+        """시간표의 '지금' 표시를 갱신한다. 교시가 바뀔 때만 전체를 다시 그리고, 같은 교시
+        안에서는 지금 시각 선과 점만 제자리에서 옮긴다 (30초마다 전체를 다시 그리면 화면이
+        깜빡여 가만히 있어도 뭔가 움직이는 것처럼 보였다)."""
+        state = self.period_state()
+        if getattr(self, "_now_sig", None) != (self.today, state[:2] if state else None):
             self.draw_tt()
+            return
+        if not (state and state[0] == "now"):
+            return
+        c = self.cal
+        y = self.thh + (state[1] - 1 + state[2]) * self.tch
+        lx0 = self.tgut + self.today.weekday() * self.tcw
+        c.coords("nowline", lx0 + 2, y, lx0 + self.tcw - 2, y)
+        c.coords("nowdot", lx0 - 4, y - 4, lx0 + 4, y + 4)
+
+    def on_tt_click(self, e):
+        cell = self.tt_cell_at(e)
+        if not cell:
+            return
+        self.tt_commit()                       # 다른 칸으로 옮기기 전에 적던 걸 저장
+        self.tt_sel, self.tt_multi = cell, None
+        self._tt_anchor, self._tt_base = cell, set()
+        self.draw_tt()
+        self.render_panel()
+        if not self.tt.get(self.tt_key(*cell)):
+            self.tt_title.focus_set()          # 빈 칸이면 바로 타이핑할 수 있게
+
+    def on_tt_ctrl_click(self, e):
+        """Ctrl+클릭: 칸을 더하거나 뺀다. 이어서 끌면 범위를 더한다."""
+        cell = self.tt_cell_at(e)
+        if not cell:
+            return "break"
+        self.tt_commit()
+        sel = self.tt_selection()
+        sel ^= {cell}
+        if not sel:
+            sel = {cell}
+        if self.tt_sel not in sel:
+            self.tt_sel = min(sel)
+        self.tt_multi = sel if len(sel) > 1 else None
+        self._tt_anchor, self._tt_base = cell, set(sel)
+        self.draw_tt()
+        self.render_panel()
+        return "break"
+
+    def on_tt_drag(self, e):
+        if self.view != "tt" or not self._tt_anchor:
+            return
+        cur = self.tt_cell_at(e, clamp=True)
+        (a, b), (c, d) = self._tt_anchor, cur
+        rect = {(x, y) for x in range(min(a, c), max(a, c) + 1)
+                for y in range(min(b, d), max(b, d) + 1)}
+        sel = self._tt_base | rect
+        new = sel if len(sel) > 1 else None
+        if new != self.tt_multi:
+            self.tt_multi = new
+            self.draw_tt()                     # 패널은 손을 뗄 때 한 번만 다시 그린다
+            self._tt_dragged = True
+
+    def on_tt_release(self, e):
+        if self.view == "tt" and getattr(self, "_tt_dragged", False):
+            self._tt_dragged = False
             self.render_panel()
-            if not self.tt.get(self.tt_key(di, p)):
-                self.tt_title.focus_set()      # 빈 칸이면 바로 타이핑할 수 있게
+            if self.tt_multi:
+                self.tt_title.focus_set()
 
     # ---------- 공용 부품 ----------
 
@@ -2332,13 +2385,27 @@ class DeskCal(tk.Tk):
 
         top = tk.Frame(self.panel, bg=CARD)
         top.pack(fill="x")
-        tk.Label(top, text=self.t("tt_cell", wd=self.t("wd")[di], p=p), bg=CARD, fg=FG,
-                 font=self.f(16, True)).pack(side="left")
-        tk.Label(top, text=self.period_text(p), bg=CARD,
-                 fg=MUTED, font=self.f(10)).pack(side="right")
-        tk.Label(self.panel, text=self.t("tt_existing" if it else "tt_new"), bg=CARD,
+        multi = sorted(self.tt_multi) if self.tt_multi else None
+        if multi:
+            tk.Label(top, text=self.t("tt_multi", n=len(multi)), bg=CARD, fg=FG,
+                     font=self.f(16, True)).pack(side="left")
+            hint = self.t("tt_multi_hint")
+            title0 = it.get("title")
+            others = sum(1 for c in multi if self.tt.get(self.tt_key(*c))
+                         and self.tt[self.tt_key(*c)].get("title") != title0)
+        else:
+            tk.Label(top, text=self.t("tt_cell", wd=self.t("wd")[di], p=p), bg=CARD, fg=FG,
+                     font=self.f(16, True)).pack(side="left")
+            tk.Label(top, text=self.period_text(p), bg=CARD,
+                     fg=MUTED, font=self.f(10)).pack(side="right")
+            hint, others = self.t("tt_existing" if it else "tt_new"), 0
+        tk.Label(self.panel, text=hint, bg=CARD,
                  fg=MUTED, font=self.f(11), anchor="w", justify="left",
-                 wraplength=pw - self.px(4)).pack(fill="x", pady=(self.px(4), self.px(12)))
+                 wraplength=pw - self.px(4)).pack(fill="x", pady=(self.px(4), self.px(4)))
+        if others:
+            tk.Label(self.panel, text=self.t("tt_overwrite", n=others), bg=CARD, fg=SUN,
+                     font=self.f(11), anchor="w").pack(fill="x")
+        tk.Frame(self.panel, bg=CARD, height=self.px(8)).pack(fill="x")
         if not self.tt_ok:
             tk.Label(self.panel, bg=CARD, fg=SUN, font=self.f(10), anchor="w",
                      justify="left", wraplength=pw - self.px(8),
@@ -2350,11 +2417,18 @@ class DeskCal(tk.Tk):
         form.columnconfigure(1, weight=1)
         self.field_label(form, self.t("course"), 0)
         self.tt_title = self.hint_entry(form, 13, self.t("course_hint"))
-        self.tt_title.insert(0, draft["title"] if draft else it.get("title", ""))
+        shown_t, shown_r = it.get("title", ""), it.get("room", "")
+        if self.tt_multi:
+            items = [self.tt.get(self.tt_key(*c)) for c in self.tt_multi]
+            same = all(items) and len({(x.get("title"), x.get("room", "")) for x in items}) == 1
+            shown_t, shown_r = ((items[0].get("title", ""), items[0].get("room", ""))
+                                if same else ("", ""))
+        self._tt_loaded = (shown_t, shown_r)
+        self.tt_title.insert(0, draft["title"] if draft else shown_t)
         self.tt_title.grid(row=0, column=1, sticky="ew", ipady=self.px(6), pady=self.px(3))
         self.field_label(form, self.t("room"), 1)
         self.tt_room = self.hint_entry(form, 13, self.t("room_hint"))
-        self.tt_room.insert(0, draft["room"] if draft else it.get("room", ""))
+        self.tt_room.insert(0, draft["room"] if draft else shown_r)
         self.tt_room.grid(row=1, column=1, sticky="ew", ipady=self.px(6), pady=self.px(3))
         for w in (self.tt_title, self.tt_room):
             w.bind("<Return>", lambda _: self.tt_commit())
@@ -2408,8 +2482,6 @@ class DeskCal(tk.Tk):
         self.exam_box = tk.Frame(self.panel, bg=CARD)
         self.exam_box.pack(fill="x")
         self.build_exams()
-        self.button(self.panel, self.t("pku_import"), self.import_pku, "plain", 10
-                    ).pack(side="bottom", anchor="w", pady=(self.px(10), 0))
 
     def build_exams(self):
         for w in self.exam_box.winfo_children():
@@ -2544,27 +2616,55 @@ class DeskCal(tk.Tk):
             self.exam_vals[k][1] = tm if tm is not None else raw
         key = self.tt_key(*self.tt_sel)
         old = self.tt.get(key)
+        keys = self.block_keys()
         new = ({"title": title, "room": room, "color": self.tt_color, "week": self.tt_week}
                if title else None)
         # 빠진 항목은 기본값으로 채워 비교한다. 안 그러면 아무것도 안 고쳐도
         # 저장할 때마다 '바뀜'이 돼 되돌리기 기록이 쌓인다.
-        cell_changed = new != (dict({"room": "", "week": "all"}, **old) if old else None)
+        updates = {}
+        if self.tt_multi:
+            # 다른 곳을 누를 때도 저장이 불린다. 고치지 않았는데 바꾸거나, 비어 있는
+            # 과목명 때문에 고른 칸의 수업을 지우는 일이 없게 한다.
+            lt, lr = getattr(self, "_tt_loaded", ("", ""))
+            t_ch, r_ch = bool(title) and title != lt, room != lr
+            for k in keys:
+                cur = self.tt.get(k)
+                if t_ch:
+                    nv = {"title": title, "room": room if (r_ch or not cur) else cur.get("room", ""),
+                          "color": self.tt_color, "week": self.tt_week}
+                elif r_ch and cur:
+                    nv = dict(cur, room=room)
+                else:
+                    continue
+                if nv != cur:
+                    updates[k] = nv
+            cell_changed = bool(updates)
+        else:
+            cell_changed = any(new != (dict({"room": "", "week": "all"}, **self.tt[k])
+                                       if self.tt.get(k) else None) for k in keys)
         vals = self.exam_values()
         exam_changed = bool(title) and vals != self._exam_loaded[1]
         if not cell_changed and not exam_changed:
             return False
         self.push_undo()
         if cell_changed:
-            if new:
-                self.tt[key] = new
+            if self.tt_multi:
+                self.tt.update(updates)
+                self._tt_loaded = (title or self._tt_loaded[0], room)
             else:
-                self.tt.pop(key, None)
+                for k in keys:
+                    if new:
+                        self.tt[k] = dict(new)
+                    else:
+                        self.tt.pop(k, None)
             self.save_tt()
         if exam_changed:
-            info = {}
+            info, old = {}, self.courses.get(title, {})
             for k, (dv, tv) in vals.items():
                 if dv:
                     info[k + "_date"], info[k + "_time"] = dv, tv
+                    if old.get(k + "_done") and old.get(k + "_date") == dv:
+                        info[k + "_done"] = True
             if info:
                 self.courses[title] = info
             else:
@@ -2579,14 +2679,27 @@ class DeskCal(tk.Tk):
         self.set_status("saved")
         return True
 
+    def block_keys(self):
+        """고른 칸이 속한 수업 블록(세로로 이어진 같은 수업)의 모든 칸. 화면에는 한 덩어리로
+        보이므로 고칠 때도 한꺼번에 고친다 (한 칸만 바뀌면 블록이 갈라져 안 바뀐 것처럼 보인다)."""
+        if self.tt_multi:
+            return [self.tt_key(*c) for c in sorted(self.tt_multi)]
+        di, p = self.tt_sel
+        for bdi, bp, span, _ in self.tt_blocks():
+            if bdi == di and bp <= p < bp + span:
+                return [self.tt_key(bdi, q) for q in range(bp, bp + span)]
+        return [self.tt_key(di, p)]
+
     def tt_set_week(self, kind):
         self.tt_commit()
         self._draft = self.tt_draft()
         self.tt_week = kind
         it = self.tt.get(self.tt_key(*self.tt_sel))
-        if it and it.get("week") != kind:
+        keys = [k for k in self.block_keys() if self.tt.get(k)]
+        if any(self.tt[k].get("week", "all") != kind for k in keys):
             self.push_undo()
-            it["week"] = kind
+            for k in keys:
+                self.tt[k]["week"] = kind
             self.save_tt()
             self.draw_tt()
         self.render_panel()
@@ -2599,9 +2712,11 @@ class DeskCal(tk.Tk):
         self._draft = self.tt_draft()
         self.tt_color = col
         it = self.tt.get(self.tt_key(*self.tt_sel))
-        if it and pc(it.get("color")) != col:
+        keys = [k for k in self.block_keys() if self.tt.get(k)]
+        if any(pc(self.tt[k].get("color")) != col for k in keys):
             self.push_undo()
-            it["color"] = col
+            for k in keys:
+                self.tt[k]["color"] = col
             self.save_tt()
             self.draw_tt()
         self.render_panel()
@@ -2616,10 +2731,11 @@ class DeskCal(tk.Tk):
         return self.t("dday_today") if n == 0 else ("D-%d" % n if n > 0 else self.t("dday_past"))
 
     def tt_delete(self):
-        if not self.tt.get(self.tt_key(*self.tt_sel)):
+        if not any(self.tt.get(k) for k in self.block_keys()):
             return
         self.push_undo()
-        self.tt.pop(self.tt_key(*self.tt_sel), None)
+        for k in self.block_keys():
+            self.tt.pop(k, None)
         self.save_tt()
         self.render()
         self.set_status("deleted")
@@ -2723,25 +2839,64 @@ class DeskCal(tk.Tk):
             self.tt_sel = cells[0]
         self.set_view("tt")
 
+    def check_box(self, parent, col, done, square, on_click):
+        """완료 체크박스. 아직이면 색 테두리만, 마우스를 올리면 ✓ 를 흐리게 미리 보여주고,
+        완료면 색을 채우고 ✓. 작은 색 점은 누를 수 있는 것처럼 보이지 않아서 바꿨다."""
+        box = self.px(26)
+        c = tk.Canvas(parent, width=box, height=box, bg=CARD, highlightthickness=0,
+                      cursor="hand2")
+        m, r = box * 0.5, box * 0.27
+        w = max(2, self.px(2))
+        shape = c.create_rectangle if square else c.create_oval
+        if square:
+            r *= 0.92
+        tick = (m - r * 0.5, m + r * 0.02, m - r * 0.12, m + r * 0.42, m + r * 0.55, m - r * 0.42)
+        if done:
+            shape(m - r, m - r, m + r, m + r, fill=mix(col, CARD, 0.25), outline="")
+            c.create_line(*tick, fill=CARD, width=w, capstyle="round", joinstyle="round")
+        else:
+            shape(m - r, m - r, m + r, m + r, fill="", outline=col, width=w)
+            hint = c.create_line(*tick, fill=mix(col, CARD, 0.45), width=w,
+                                 capstyle="round", joinstyle="round", state="hidden")
+            c.bind("<Enter>", lambda e: c.itemconfig(hint, state="normal"), add="+")
+            c.bind("<Leave>", lambda e: c.itemconfig(hint, state="hidden"), add="+")
+        c.bind("<Button-1>", lambda e: on_click())
+        return c
+
+    def exam_done(self, title, kind):
+        return bool(self.courses.get(title, {}).get(kind + "_done"))
+
+    def toggle_exam(self, title, kind):
+        info = self.courses.get(title)
+        if info is None:
+            return
+        self.push_undo()
+        if info.get(kind + "_done"):
+            info.pop(kind + "_done", None)
+        else:
+            info[kind + "_done"] = True
+        self.save_courses()
+        self.render()
+
     def make_exam_row(self, kind, title, tm):
         row = tk.Frame(self.panel, bg=CARD, cursor="hand2")
         row.pack(fill="x", pady=self.px(1))
-        box = self.px(26)
-        mark = tk.Canvas(row, width=box, height=box, bg=CARD, highlightthickness=0)
-        mark.pack(side="left", padx=(self.px(2), 0))
-        m, r = box * 0.5, box * 0.2
-        mark.create_rectangle(m - r, m - r, m + r, m + r, outline="",
-                              fill=self.dot_color(self.course_color(title)))
+        done = self.exam_done(title, kind)
+        box = self.check_box(row, self.dot_color(self.course_color(title)), done, True,
+                             lambda: self.toggle_exam(title, kind))
+        box.pack(side="left", padx=(self.px(2), 0))
+        self.tip(box, self.t("tip_check"))
         if tm:
-            tk.Label(row, text=tm, bg=CARD, fg=MUTED, font=self.f(11)
+            tk.Label(row, text=tm, bg=CARD, fg=DIM if done else MUTED, font=self.f(11)
                      ).pack(side="right", padx=(self.px(4), self.px(8)))
-        tk.Label(row, text="%s · %s" % (self.t("exam_" + kind), title), bg=CARD, fg=FG,
-                 font=self.f(13, True), anchor="w", justify="left",
-                 wraplength=self.panel_w - self.px(90), pady=self.px(4)
-                 ).pack(side="left", fill="x", expand=True, padx=(self.px(6), 0))
-        for w in [row] + list(row.winfo_children()):
+        lab = tk.Label(row, text="%s · %s" % (self.t("exam_" + kind), title), bg=CARD,
+                       fg=DIM if done else FG, font=self.f(13, not done, strike=done),
+                       anchor="w", justify="left", cursor="hand2",
+                       wraplength=self.panel_w - self.px(90), pady=self.px(4))
+        lab.pack(side="left", fill="x", expand=True, padx=(self.px(6), 0))
+        for w in [row] + [w for w in row.winfo_children() if w is not box]:
             w.bind("<Button-1>", lambda e, t=title: self.goto_course(t))
-        self.tip(row, self.t("tip_exam"))
+        self.tip(lab, self.t("tip_exam"))
         self.hoverable(row)
 
     def make_row(self, idx, it):
@@ -2750,18 +2905,8 @@ class DeskCal(tk.Tk):
         done = bool(it.get("done"))
         col = self.dot_color(it.get("color", PALETTE[0]))
 
-        box = self.px(26)
-        dot = tk.Canvas(row, width=box, height=box, bg=CARD, highlightthickness=0,
-                        cursor="hand2")
+        dot = self.check_box(row, col, done, False, lambda i=idx: self.toggle_done(i))
         dot.pack(side="left", padx=(self.px(2), 0))
-        m, r = box * 0.5, box * 0.22
-        if done:
-            dot.create_oval(m - r, m - r, m + r, m + r, outline=DIM, fill="")
-            dot.create_line(m - r * 0.55, m, m - r * 0.1, m + r * 0.5,
-                            m + r * 0.6, m - r * 0.55, fill=MUTED, width=max(1, self.px(2)))
-        else:
-            dot.create_oval(m - r, m - r, m + r, m + r, fill=col, outline="")
-        dot.bind("<Button-1>", lambda e, i=idx: self.toggle_done(i))
         dot.bind("<Button-3>", lambda e, i=idx: self.color_menu(e, i))
         self.tip(dot, self.t("tip_done"))
 
@@ -2845,7 +2990,7 @@ class DeskCal(tk.Tk):
         for title, info in self.courses.items():
             for k in EXAM_KEYS:
                 d = parse_date(info.get(k + "_date", ""))
-                if d and d >= self.today:
+                if d and d >= self.today and not info.get(k + "_done"):
                     # 시험 종류를 앞에 둔다. 과목명이 길어 잘릴 때 '期中'이 잘리면 안 된다.
                     rows.append((d, "%s · %s" % (self.t("exam_%s_s" % k), title),
                                  info.get(k + "_time", ""),
@@ -3006,8 +3151,6 @@ class DeskCal(tk.Tk):
         self.conf.update({"x": self.winfo_x(), "y": self.winfo_y(), "size": self.size_idx,
                           "color": self.color, "lang": self.lang, "theme": self.theme,
                           "glass": self.glass})
-        if not self.float_mode:
-            self.conf["pinned"] = self.pinned
         save_json(CONF_FILE, self.conf)
 
     # ---------- 창 이동 · 메뉴 ----------
@@ -3095,10 +3238,7 @@ class DeskCal(tk.Tk):
         self.radio(wk, self.t("set_odd"), odd, lambda: self.set_week_kind(True))
         self.radio(wk, self.t("set_even"), not odd, lambda: self.set_week_kind(False))
         m.add_cascade(label=self.t("parity"), menu=wk)
-        m.add_command(label=self.t("pku_import"), command=self.import_pku)
 
-        m.add_command(label=self.t("pin_top") if self.pinned else self.t("pin_desk"),
-                      command=self.toggle_pin)
         on = autostart_enabled()
         self.radio(m, self.t("autostart"), on, lambda: self.set_autostart_pref(not on))
         m.add_separator()
@@ -3126,57 +3266,59 @@ class DeskCal(tk.Tk):
         self.conf["autostart"] = on            # 사용자가 고른 값을 기억한다
         self.save_conf()
 
-    def toggle_pin(self):
-        self.pinned = not self.pinned
-        self.attributes("-topmost", not self.pinned)
-        if self.pinned:
-            self._topmost = False
-            self.lower_to_desktop()
-        else:
-            user32.SetWindowPos(self.hwnd, HWND_TOP, 0, 0, 0, 0, SWP_SHOW)
-        self.save_conf()
+    def screen_rect(self):
+        """위젯의 실제 화면 위치 (x, y, 너비, 높이). 바탕화면에 붙어 있으면 winfo_root* 가
+        바탕화면 기준 좌표를 돌려줘서 안내창이 왼쪽 위로 가므로 Win32 로 직접 잰다."""
+        r = RECT()
+        if user32.GetWindowRect(self.hwnd, ctypes.byref(r)) and r.right > r.left:
+            return r.left, r.top, r.right - r.left, r.bottom - r.top
+        return self.winfo_rootx(), self.winfo_rooty(), self.w(), self.winfo_height()
 
-    # ---------- 북대 门户에서 가져오기 ----------
+    def place_dialog(self, top):
+        """안내창을 위젯 가운데(조금 위쪽)에 두되 화면 밖으로 나가지 않게. 자리를 잡은 뒤에 보여준다."""
+        top.update_idletasks()
+        wx, wy, ww, wh = self.screen_rect()
+        w, h = top.winfo_reqwidth(), top.winfo_reqheight()
+        l, t, r, b = self.work_area()
+        x = min(max(wx + (ww - w) // 2, l), r - w)
+        y = min(max(wy + max(0, (wh - h) // 3), t), b - h)
+        top.geometry("+%d+%d" % (x, y))
+        top.deiconify()
+        top.lift()
+        top.focus_force()
+        self.keep_front(top)
 
-    def import_pku(self):
-        """학교의 정식 허가를 받을 때까지 멈춰 두었다. 누르면 안내만 한다."""
-        tkmsg.showinfo("DeskCal", self.t("pku_paused"), parent=self)
+    def dialog(self):
+        top = tk.Toplevel(self, bg=CARD)
+        top.withdraw()                                   # 왼쪽 위에 잠깐 떴다 옮겨지지 않게
+        top.title("DeskCal")
+        top.attributes("-topmost", True)
+        top.transient(self)
+        top.resizable(False, False)
+        return top
 
-    def apply_pku(self, resp):
-        """가져온 课表를 시간표에 넣는다. 같은 과목은 원래 색을 유지하고, 그 과목이 있던
-        옛 칸은 지운다(옮겨진 수업). 직접 넣은 다른 수업은 그대로 둔다."""
-        slots, skipped = parse_pku_table(resp)
-        if not slots:
-            tkmsg.showinfo("DeskCal", self.t("pku_empty"), parent=self)
-            return
-        self.tt_commit()
-        self.push_undo()
-        titles = {c["title"] for cs in slots.values() for c in cs}
-        colors = {}
-        for it in self.tt.values():
-            colors.setdefault(it.get("title"), it.get("color"))
-        used = [colors[t] for t in titles if colors.get(t)]
-        free = [c for c in PALETTE if c not in used] or PALETTE
-        for k in [k for k, it in self.tt.items() if it.get("title") in titles]:
-            del self.tt[k]
-        for (di, p), cs in sorted(slots.items()):
-            c = cs[0]
-            skipped += len(cs) - 1                   # 한 칸에는 한 과목만 넣을 수 있다
-            if not colors.get(c["title"]):
-                colors[c["title"]] = free[len([t for t in colors if t in titles]) % len(free)]
-            self.tt[self.tt_key(di, p)] = {"title": c["title"], "room": c["room"],
-                                           "color": colors[c["title"]], "week": c["week"]}
-            if c["exam"] and not self.courses.get(c["title"], {}).get("fin_date"):
-                info = self.courses.setdefault(c["title"], {})   # 직접 적어둔 날짜는 그대로
-                info["fin_date"], info["fin_time"] = c["exam"]
-        self.save_tt()
-        self.save_courses()
-        self.render()
-        n_cells = sum(1 for _ in slots)
-        log("门户 课表 가져옴: %d과목, %d칸, 제외 %d" % (len(titles), n_cells, skipped))
-        tkmsg.showinfo("DeskCal", self.t(
-            "pku_done", n=len(titles), c=n_cells,
-            extra=self.t("pku_skipped", k=skipped) if skipped else ""), parent=self)
+    def notice(self, text):
+        """tkmsg.showinfo 대신. 기본 알림은 바탕화면에 붙은 위젯 기준으로 엉뚱한 곳에 뜬다."""
+        top = self.dialog()
+        pad = self.px(18)
+        tk.Label(top, text=text, bg=CARD, fg=FG, font=self.f(12), anchor="w", justify="left",
+                 wraplength=self.px(400)).pack(fill="x", padx=pad, pady=(pad, 0))
+        bar = tk.Frame(top, bg=CARD)
+        bar.pack(fill="x", padx=pad, pady=pad)
+        self.button(bar, self.t("ok"), top.destroy, "primary", 11).pack(side="right")
+        top.bind("<Return>", lambda e: top.destroy())
+        top.bind("<Escape>", lambda e: top.destroy())
+        self.place_dialog(top)
+        top.grab_set()
+        self.wait_window(top)
+
+    def keep_front(self, top):
+        """다른 창에 갔다 와도 안내창이 위젯 뒤에 숨지 않게 계속 맨 앞에 둔다."""
+        def tick():
+            if top.winfo_exists():
+                top.lift()
+                top.after(400, tick)
+        tick()
 
     def quit_app(self):
         self.tt_commit()
@@ -3235,6 +3377,16 @@ def start_stall_watch(app):
 
 
 if __name__ == "__main__":
+    # 파이썬 오류 없이 갑자기 꺼질 때(Tk 내부 충돌 등) 어디서 죽었는지 남긴다
+    import faulthandler
+    try:
+        os.makedirs(APP_DIR, exist_ok=True)
+        _crash = open(os.path.join(APP_DIR, "crash.log"), "a", encoding="utf-8")
+        _crash.write("--- %s start pid %d\n" % (dt.datetime.now().isoformat(" ", "seconds"), os.getpid()))
+        _crash.flush()
+        faulthandler.enable(_crash)
+    except OSError:
+        pass
     DPI_MODE = set_dpi_awareness()
     os.makedirs(APP_DIR, exist_ok=True)
     if already_running():

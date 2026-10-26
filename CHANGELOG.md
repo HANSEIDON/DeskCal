@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.2.0 — 2026-10-26
+
+### Added
+
+- **Import your PKU timetable.** The app can pull your official 课表 from the university
+  through the ISOP platform: enter your student ID and the code sent to your PKU email, then
+  review and tick which changes to apply. Nothing is overwritten until you confirm.
+- **Tick classes and exams off** on the calendar and timetable. Finished items show as hollow
+  markers and drop out of Upcoming.
+- **Edit several timetable cells at once** by dragging or Ctrl+clicking them.
+
+### Changed
+
+- New liquid-glass app icon.
+- The release is now compiled with Nuitka instead of PyInstaller.
+- The calendar shows a mark per event with a "+N" overflow, and dialogs open centered on the
+  widget.
+
+### Fixed
+
+- Crash logging and a redraw flicker when the view returned to today.
+
 ## 1.1.3 — 2026-10-16
 
 ### Changed

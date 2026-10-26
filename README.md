@@ -30,7 +30,7 @@ and needs no account.
   calendar and in Upcoming.
 - 🪟 **Always on the desktop**, even after Win+D. Frosted-glass look, dark and light themes.
 - 🌐 **English / 한국어 / 中文**, with a bundled font so CJK text renders cleanly.
-- 💾 **Autosave and Ctrl+Z.** Light on resources: about 100 MB of memory, near-zero idle CPU.
+- 💾 **Autosave and Ctrl+Z.** Light on resources: about 75 MB of memory and under 1% of one CPU core when idle ([details](#-performance)).
 
 ![Timetable view, dark theme](docs/timetable-dark.png)
 
@@ -50,7 +50,7 @@ and needs no account.
 
 > [!NOTE]
 > The exe isn't code-signed, so Windows may show **"Windows protected your PC"** on first
-> launch. Click **More info → Run anyway**. Some antivirus tools also flag PyInstaller apps
+> launch. Click **More info → Run anyway**. Some antivirus tools also flag unsigned apps
 > by mistake. If you prefer, run from source or [build the exe yourself](#building-the-exe).
 
 <details>
@@ -59,7 +59,7 @@ and needs no account.
 Each release lists the zip's SHA-256 checksum. In PowerShell:
 
 ```powershell
-Get-FileHash .\DeskCal-1.1.3-windows-x64.zip
+Get-FileHash .\DeskCal-1.2.0-windows-x64.zip
 ```
 
 The hash should match the one on the release page.
@@ -77,15 +77,26 @@ DeskCal starts with Windows by default, quietly behind your windows. To stop tha
 **≡ → Start with Windows**. The setting is an entry in your user's `Run` registry key (no
 admin rights needed), and turning it off removes the entry.
 
-## 🎓 Importing from PKU portal (paused)
+## 🎓 Import your PKU timetable
 
-Versions 1.1.0–1.1.2 could import your 课表 from the PKU portal. That import signed in
-through the portal's existing sign-in registration, and the PKU Computing Center has told us
-other apps may not reuse it. **The import is paused from 1.1.3 on**, and those versions are no
-longer offered for download.
+![PKU ISOP](https://img.shields.io/badge/PKU%20ISOP-registered%20app-A51C30)
 
-We're applying for official permission. Once it's approved, the import will return in an
-update. Until then, click a cell in **Timetable** to add your classes.
+The downloaded app can pull your official 课表 straight from Peking University, so you don't
+have to type each class in by hand.
+
+1. **Timetable → Import school timetable.**
+2. Enter your student ID. A verification code is sent to your PKU email.
+3. Enter the code. DeskCal lists what differs from your current timetable, and you tick which
+   changes to apply — nothing is overwritten until you confirm.
+
+It reads through the university's 数据共享开放服务平台 (ISOP) using an app registered and
+approved for this purpose. Access needs the PKU network (use the campus VPN off campus). Only
+your own timetable is read, and nothing is uploaded.
+
+> [!NOTE]
+> The ISOP integration code is kept private under a confidentiality agreement with the
+> university, so it isn't part of this open-source repository — the rest of DeskCal is here in
+> full. This feature is in the downloaded app, not in the run-from-source build.
 
 ## 🖱️ How to use
 
@@ -102,7 +113,7 @@ update. Until then, click a cell in **Timetable** to add your classes.
 | Exam dates | Select a class → **Exams · Deadlines**. They show on the calendar as squares |
 | Set which week is odd | **≡ → Odd / even week** |
 
-The settings menu also has language, theme, background, size and *Always on top*. After two
+The settings menu also has language, theme, background and size. After two
 idle minutes, the calendar jumps back to today.
 
 ## 💾 Your data
@@ -141,6 +152,32 @@ add 12 entries to `config.json`:
   your system.
 </details>
 
+## ⚡ Performance
+
+DeskCal is built to sit on your desktop all day without you noticing it.
+
+| | DeskCal 1.2.0 (exe) |
+| --- | --- |
+| Startup | 0.7–0.8 s (about 3.6 s the very first time after download) |
+| Memory | about 73 MB |
+| CPU while idle | 0.4 % of one core |
+| Network | none, it never goes online |
+| Download / on disk | 36.6 MB zip / 56 MB folder, of which 32 MB is the CJK font |
+
+Measured on Windows 11 with an Intel Core Ultra 7 258V and 32 GB RAM, using a fresh copy
+with no data and the default glass background. Choosing **Background → Solid** uses a
+little less memory and CPU.
+
+While idle, DeskCal only checks whether *Show desktop* (Win+D) was pressed and whether the
+wallpaper changed. Both checks take well under a millisecond, and the glass is only redrawn
+when something actually changes, so the effect on battery life is negligible.
+
+To measure on your own machine, quit DeskCal and run:
+
+`powershell
+powershell -ExecutionPolicy Bypass -File tools\benchmark.ps1
+`
+
 ## 🛠️ Development
 
 A single file, `deskcal.py`, using tkinter and Win32 calls via `ctypes`. Only the standard
@@ -158,8 +195,9 @@ python tests/make_screenshots.py    # regenerates docs/ images from demo data
 python tools/build.py
 ```
 
-This builds `dist/DeskCal-<version>-windows-x64.zip` and its `.sha256` file, using a pinned
-PyInstaller version in an isolated `.build-venv`.
+This builds `dist/DeskCal-<version>-windows-x64.zip` and its `.sha256` file, compiling
+`deskcal.py` to machine code with [Nuitka](https://nuitka.net) in an isolated `.build-venv`.
+The open-source build has no 课表 import (see the note above).
 
 ## 📝 Changelog
 
