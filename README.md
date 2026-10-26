@@ -102,8 +102,8 @@ which needs the PKU network (use the campus VPN off campus); only your own timet
 and nothing is uploaded.
 
 > [!NOTE]
-> **Direct Connection & Privacy:** DeskCal communicates directly with Peking University's official ISOP endpoint (isop.pku.edu.cn) using native Windows HTTPS requests (bypassing system proxies). There are no intermediate relay or third-party servers. Timetable authorization tokens are protected locally using Windows DPAPI and never leave your machine.
-> Under university data confidentiality agreements, the proprietary native integration module is bundled pre-compiled in the official release package rather than in the public source tree.
+> DeskCal communicates directly and securely with Peking University over encrypted HTTPS. There are no intermediate servers or analytics, and all credentials remain solely on your local computer.
+> Under confidentiality agreements with the university, the integration component is included only in the official release package rather than the open-source repository.
 
 ## 🖱️ How to use
 
