@@ -10,7 +10,7 @@
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 [![License](https://img.shields.io/github/license/HANSEIDON/DeskCal)](LICENSE)
 
-[![Import your PKU timetable](https://img.shields.io/badge/new_in_1.2.0-import_your_PKU_timetable-A51C30?style=flat-square)](#-import-your-pku-timetable)
+[![PKU ISOP timetable import](https://img.shields.io/badge/new_in_1.2.0-PKU_ISOP_timetable_import-A51C30?style=flat-square)](#-import-your-pku-timetable)
 
 [**⬇️ Download for Windows**](https://github.com/HANSEIDON/DeskCal/releases/latest)
 
@@ -87,21 +87,30 @@ admin rights needed), and turning it off removes the entry.
 
 ## 🎓 Import your PKU timetable
 
-The downloaded app can pull your official 课表 straight from Peking University, so you don't
-have to type each class in by hand.
+![Registered PKU ISOP app](https://img.shields.io/badge/PKU%20ISOP-registered%20%26%20approved%20app-A51C30?style=flat-square)
+
+A fresh install starts with an empty timetable — but you don't have to type in every class.
+DeskCal is a **registered and approved app on Peking University's data-sharing platform
+(数据共享开放服务平台, ISOP)**, so it can load your official 课表 straight from the university.
+
+| Fresh install | After import |
+| :---: | :---: |
+| ![Empty timetable on first run](docs/import-empty-dark.png) | ![Timetable filled in after importing](docs/import-filled-dark.png) |
+
+**How it works:**
 
 1. **Timetable → Import school timetable.**
-2. Enter your student ID. A verification code is sent to your PKU email.
-3. Enter the code. DeskCal lists what differs from your current timetable, and you tick which
-   changes to apply — nothing is overwritten until you confirm.
+2. Enter your student ID — a verification code is sent to your **PKU email**.
+3. Enter the code, then review what changed and tick which classes to apply. Nothing is
+   overwritten until you confirm.
 
-| 1 · Enter your student ID | 2 · Review, then apply |
-| :---: | :---: |
-| ![Student ID prompt](docs/import-ask-dark.png) | ![Review changes before applying](docs/import-review-dark.png) |
+| 1 · Student ID | 2 · Code from your PKU email | 3 · Review & apply |
+| :---: | :---: | :---: |
+| ![Enter your student ID](docs/import-ask-dark.png) | ![Enter the code from your PKU email](docs/import-code-dark.png) | ![Review changes before applying](docs/import-review-dark.png) |
 
-It reads through the university's 数据共享开放服务平台 (ISOP) using an app registered and
-approved for this purpose. Access needs the PKU network (use the campus VPN off campus). Only
-your own timetable is read, and nothing is uploaded.
+Everything goes through the official ISOP platform, which verifies you by your PKU email.
+Access needs the PKU network (use the campus VPN off campus), only your own timetable is read,
+and nothing is uploaded.
 
 > [!NOTE]
 > The ISOP integration code is kept private under a confidentiality agreement with the
