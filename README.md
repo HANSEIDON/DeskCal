@@ -102,9 +102,8 @@ which needs the PKU network (use the campus VPN off campus); only your own timet
 and nothing is uploaded.
 
 > [!NOTE]
-> The ISOP integration code is kept private under a confidentiality agreement with the
-> university, so it isn't part of this open-source repository — the rest of DeskCal is here in
-> full. This feature is in the downloaded app, not in the run-from-source build.
+> **Direct Connection & Privacy:** DeskCal communicates directly with Peking University's official ISOP endpoint (isop.pku.edu.cn) using native Windows HTTPS requests (bypassing system proxies). There are no intermediate relay or third-party servers. Timetable authorization tokens are protected locally using Windows DPAPI and never leave your machine.
+> Under university data confidentiality agreements, the proprietary native integration module is bundled pre-compiled in the official release package rather than in the public source tree.
 
 ## 🖱️ How to use
 
@@ -169,8 +168,8 @@ DeskCal is built to sit on your desktop all day without you noticing it.
 | Startup | about 1 second |
 | Memory | about 73 MB |
 | CPU while idle | 0.4 % of one core |
-| Network | none, it never goes online |
-| Download / on disk | 39.9 MB zip / 65 MB folder, of which 32 MB is the CJK font |
+| Network | none by default (only connects to official PKU ISOP server when importing 课表) |
+| Download / on disk | 40.0 MB zip / 65 MB folder, of which 32 MB is the CJK font |
 
 Measured on Windows 11 with an Intel Core Ultra 7 258V and 32 GB RAM, using a fresh copy
 with no data and the default glass background. Choosing **Background → Solid** uses a
@@ -182,9 +181,9 @@ when something actually changes, so the effect on battery life is negligible.
 
 To measure on your own machine, quit DeskCal and run:
 
-`powershell
+``powershell
 powershell -ExecutionPolicy Bypass -File tools\benchmark.ps1
-`
+``
 
 ## 🛠️ Development
 
