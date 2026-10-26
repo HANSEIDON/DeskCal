@@ -109,7 +109,7 @@ def main():
     # Nuitka license
     with open(os.path.join(lic, "Nuitka-LICENSE.txt"), "w", encoding="utf-8") as f:
         f.write("DeskCal.exe is compiled with Nuitka (https://nuitka.net),\n"
-                "licensed under the European Union Public Licence 1.2 (EUPL-1.2).\n")
+                "licensed under the Apache License 2.0.\n")
 
     print("\n[4/4] Zipping ...")
     os.makedirs(DIST, exist_ok=True)

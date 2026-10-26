@@ -9,7 +9,7 @@ components so it can run without a Python installation.
 | [Noto Sans CJK SC](https://github.com/notofonts/noto-cjk) | UI font (Chinese, Korean, Latin) | SIL Open Font License 1.1 |
 | [Python](https://www.python.org/) 3.12 runtime and standard library | Runs the app | [Python Software Foundation License](https://docs.python.org/3/license.html) |
 | [Tcl/Tk](https://www.tcl-lang.org/) 8.6 | Window and drawing toolkit (tkinter) | [Tcl/Tk license](https://www.tcl-lang.org/software/tcltk/license.html) (BSD-style) |
-| [PyInstaller](https://pyinstaller.org/) bootloader | Starts the bundled app (`DeskCal.exe`) | GPL 2.0 with an exception that allows distributing bundled apps under any license ([details](https://pyinstaller.org/en/stable/license.html)) |
+| [Nuitka](https://nuitka.net/) | Compiles `deskcal.py` to the bundled app (`DeskCal.exe`) | [Apache License 2.0](https://github.com/Nuitka/Nuitka/blob/main/LICENSE.txt) |
 
 The full license texts are in the `licenses` folder of the release. In this
 repository, the font license is `fonts/OFL-LICENSE.txt`.

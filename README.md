@@ -158,11 +158,11 @@ DeskCal is built to sit on your desktop all day without you noticing it.
 
 | | DeskCal 1.2.0 (exe) |
 | --- | --- |
-| Startup | 0.7–0.8 s (about 3.6 s the very first time after download) |
+| Startup | about 1 second |
 | Memory | about 73 MB |
 | CPU while idle | 0.4 % of one core |
 | Network | none, it never goes online |
-| Download / on disk | 36.6 MB zip / 56 MB folder, of which 32 MB is the CJK font |
+| Download / on disk | 38.6 MB zip / 59 MB folder, of which 32 MB is the CJK font |
 
 Measured on Windows 11 with an Intel Core Ultra 7 258V and 32 GB RAM, using a fresh copy
 with no data and the default glass background. Choosing **Background → Solid** uses a
@@ -206,6 +206,6 @@ See [CHANGELOG.md](CHANGELOG.md).
 ## 📄 License
 
 [MIT](LICENSE). Bundled third-party components (Noto Sans CJK SC font, Python runtime,
-Tcl/Tk, PyInstaller bootloader) are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Tcl/Tk) are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 DeskCal is an independent project and is not affiliated with Peking University.
