@@ -907,6 +907,60 @@ check("지워진과목" not in app.courses and len(app.exams_on(exam_d)) == 0,
 app.destroy()
 
 # ------------------------------------------------------------------
+section("바탕화면 보기(Show Desktop) 및 작업표시줄 버튼 반응")
+check("Shell_TrayWnd" in deskcal.DESK_SHELL_CLASSES, "작업표시줄(Shell_TrayWnd)이 셸 클래스에 포함됨")
+check("Progman" in deskcal.DESK_SURFACE_CLASSES and "WorkerW" in deskcal.DESK_SURFACE_CLASSES,
+      "바탕화면 서피스 클래스(Progman, WorkerW) 정의됨")
+
+app, d = fresh(conf={"pinned": True})
+app.pinned = True
+app.hwnd = 12345
+app._z = "showdesk"
+app._topmost = True
+
+orig_GetForegroundWindow = deskcal.user32.GetForegroundWindow
+orig_win_class = deskcal.win_class
+orig_IsWindowVisible = deskcal.user32.IsWindowVisible
+orig_is_cloaked = deskcal.is_cloaked
+orig_SetWindowPos = deskcal.user32.SetWindowPos
+
+deskcal.user32.SetWindowPos = lambda *args: 1
+deskcal.user32.GetForegroundWindow = lambda: 99999
+deskcal.win_class = lambda h: "Shell_TrayWnd"
+app.sync_z()
+check(app._z == "showdesk", "작업표시줄(Shell_TrayWnd) 포커스 시 바탕화면 보기(showdesk) 유지")
+
+deskcal.win_class = lambda h: "WorkerW"
+app.sync_z()
+check(app._z == "showdesk", "바탕화면(WorkerW) 포커스 시 showdesk 유지")
+
+deskcal.win_class = lambda h: "TkTopLevel"
+app.owns = lambda h: True
+app.sync_z()
+check(app._z == "showdesk", "위젯 조작 중 showdesk 유지")
+
+app.owns = lambda h: False
+deskcal.win_class = lambda h: "Chrome_WidgetWin_1"
+deskcal.user32.IsWindowVisible = lambda h: 1
+deskcal.is_cloaked = lambda h: False
+app.sync_z()
+check(app._z == "bottom" and not app._topmost, "일반 앱 복귀 시 바탕화면 보기 종료 후 bottom 복원")
+
+app._z = "bottom"
+app.is_covered_by_desktop = lambda: 88888
+app.is_below = lambda h: True
+deskcal.win_class = lambda h: "Shell_TrayWnd"
+app.sync_z()
+check(app._z == "showdesk" and app._topmost, "작업표시줄 클릭으로 바탕화면이 덮었을 때 자동 감지하여 맨 위로 올림")
+
+deskcal.user32.GetForegroundWindow = orig_GetForegroundWindow
+deskcal.win_class = orig_win_class
+deskcal.user32.IsWindowVisible = orig_IsWindowVisible
+deskcal.is_cloaked = orig_is_cloaked
+deskcal.user32.SetWindowPos = orig_SetWindowPos
+app.destroy()
+
+# ------------------------------------------------------------------
 section("exe · 윈도우 시작 시 실행")
 deskcal.RUN_NAME = "DeskCal_test_%d" % os.getpid()      # 진짜 'DeskCal' 값은 건드리지 않는다
 cmd = deskcal.launch_command()

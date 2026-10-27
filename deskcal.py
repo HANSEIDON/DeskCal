@@ -635,6 +635,9 @@ user32.GetForegroundWindow.restype = _H
 user32.GetParent.restype = _H
 user32.GetParent.argtypes = [_H]
 user32.FindWindowW.restype = _H
+user32.FindWindowExW.restype = _H
+user32.FindWindowExW.argtypes = [_H, _H, ctypes.c_wchar_p, ctypes.c_wchar_p]
+user32.IsIconic.argtypes = [_H]
 user32.GetWindow.restype = _H
 user32.GetWindow.argtypes = [_H, ctypes.c_uint]
 user32.GetClassNameW.argtypes = [_H, ctypes.c_wchar_p, ctypes.c_int]
@@ -673,13 +676,23 @@ SWP_SHOW = 0x0001 | 0x0002 | 0x0040     # NOSIZE | NOMOVE | SHOWWINDOW
 SW_SHOWNOACTIVATE = 4
 ERROR_ALREADY_EXISTS = 183
 MONITOR_NEAREST = 2
-DESK_CLASSES = ("Progman", "WorkerW")   # 바탕화면(아이콘·배경)을 그리는 창
+DESK_SURFACE_CLASSES = ("Progman", "WorkerW")   # 바탕화면(아이콘·배경)을 그리는 창
+DESK_SHELL_CLASSES = (
+    "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
+    "Windows.UI.Core.CoreWindow", "TopLevelWindowForOverflowXamlIsland",
+    "XamlExplorerHostIslandWindow",
+)   # 바탕화면 및 윈도우 셸 UI 관련 창
+DESK_CLASSES = DESK_SHELL_CLASSES
+
+
+_CLASS_BUF = ctypes.create_unicode_buffer(64)
 
 
 def win_class(h):
-    b = ctypes.create_unicode_buffer(64)
-    user32.GetClassNameW(h, b, 64)
-    return b.value
+    if not h:
+        return ""
+    user32.GetClassNameW(h, _CLASS_BUF, 64)
+    return _CLASS_BUF.value
 
 
 def win_pid(h):
@@ -991,7 +1004,7 @@ class DeskCal(tk.Tk):
         self.bind_all("<Escape>", lambda _: self.close_picker(), add="+")
         for ev in ("<Motion>", "<KeyPress>", "<ButtonPress>", "<MouseWheel>"):
             self.bind_all(ev, self.touch, add="+")
-        self._jobs = {"z": self.after(300, self.z_tick),
+        self._jobs = {"z": self.after(60, self.z_tick),
                       "dog": self.after(60000, self.watchdog),
                       "clock": self.after(30000, self.clock_tick),
                       "wall": self.after(5000, self.wall_tick),
@@ -1216,9 +1229,19 @@ class DeskCal(tk.Tk):
             h, n = user32.GetWindow(h, GW_HWNDNEXT), n + 1
         return False
 
-    def raise_above_desktop(self, desk):
+    def is_covered_by_desktop(self):
+        """바탕화면 창(Progman 또는 WorkerW)이 내 창보다 위에 있어 위젯을 가리고 있는가."""
+        for name in DESK_SURFACE_CLASSES:
+            h = user32.FindWindowW(name, None)
+            while h:
+                if user32.IsWindowVisible(h) and self.is_below(h):
+                    return h
+                h = user32.FindWindowExW(None, h, name, None)
+        return None
+
+    def raise_above_desktop(self, desk=None):
         user32.SetWindowPos(self.hwnd, HWND_TOP, 0, 0, 0, 0, SWP_KEEP)
-        if self.is_below(desk):          # 바탕화면이 더 높은 층에 있으면 맨 위 층으로
+        if (not desk) or self.is_below(desk):          # 바탕화면이 더 높은 층에 있으면 맨 위 층으로
             user32.SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP)
             self._topmost = True
         self._z = "showdesk"
@@ -1264,18 +1287,21 @@ class DeskCal(tk.Tk):
             # 되는 버그가 나기 때문이다.
             return
         fg = user32.GetForegroundWindow()
-        if not fg:
-            return
-        desk = win_class(fg) in DESK_CLASSES
+        fg_cls = win_class(fg) if fg else ""
+        is_desk_shell = (not fg) or (fg_cls in DESK_SHELL_CLASSES) or self.owns(fg)
+
         if self._z == "showdesk":
-            # 바탕화면 보기 중에는 바탕화면이나 위젯을 만지는 동안 그대로 둔다.
-            # (위젯을 눌렀다가 바탕화면을 누르면 내려가서 다시 사라지던 문제)
-            if not desk and not self.owns(fg):
-                self.lower_to_desktop()        # 다른 창으로 돌아감 = 바탕화면 보기 끝
+            # 바탕화면 보기 중에는 바탕화면·작업표시줄이나 위젯을 만지는 동안 그대로 둔다.
+            # 진짜 다른 앱 창(Chrome 등)으로 돌아갔을 때만 바탕화면 보기를 끝낸다.
+            if fg and not self.owns(fg) and fg_cls not in DESK_SHELL_CLASSES:
+                if user32.IsWindowVisible(fg) and not is_cloaked(fg):
+                    self.lower_to_desktop()
             return
-        if self.owns(fg):                      # 위젯을 쓰는 중
+
+        if fg and self.owns(fg):                      # 위젯을 쓰는 중
             self._z = "active"
             return
+
         if self._z in ("startup", "summoned"):   # 켜거나 불러낸 직후엔 앞에 둔다
             if self._fg_start is None:
                 self._fg_start = fg
@@ -1283,9 +1309,18 @@ class DeskCal(tk.Tk):
             if fg == self._fg_start or time.time() - self._summon_t < 2.0:
                 self._fg_start = fg
                 return
-        if desk and self.is_below(fg):         # 바탕화면이 나를 덮었다 = 바탕화면 보기
-            self.raise_above_desktop(fg)
+
+        # 바탕화면 보기(Win+D 또는 작업표시줄 바탕화면 보기 버튼 클릭) 감지:
+        desk_cover = None
+        if fg_cls in DESK_SURFACE_CLASSES and self.is_below(fg):
+            desk_cover = fg
+        elif is_desk_shell:
+            desk_cover = self.is_covered_by_desktop()
+
+        if desk_cover:
+            self.raise_above_desktop(desk_cover)
             return
+
         if self._z != "bottom":
             self.lower_to_desktop()
         elif self.covering_apps():             # 두 번 실행해서 앞으로 꺼내진 경우
@@ -1297,7 +1332,9 @@ class DeskCal(tk.Tk):
         try:
             if self._summon_ev and kernel32.WaitForSingleObject(self._summon_ev, 0) == 0:
                 self.summon()
-            if not user32.IsWindowVisible(self.hwnd):
+            if user32.IsIconic(self.hwnd):
+                user32.ShowWindow(self.hwnd, 9)       # SW_RESTORE: 최소화되었으면 복구
+            elif not user32.IsWindowVisible(self.hwnd):
                 user32.ShowWindow(self.hwnd, SW_SHOWNOACTIVATE)
             # 다른 앱으로 '옮겨가는 순간'에만 날짜 달력·설명 풍선을 닫는다.
             # (앞 창이 내 것이 아니라는 이유만으로 닫으면 열자마자 닫힐 수 있다)
@@ -1310,7 +1347,7 @@ class DeskCal(tk.Tk):
             self.sync_z()
         except Exception:
             log("z_tick 예외:\n" + traceback.format_exc())
-        self._jobs["z"] = self.after(300, self.z_tick)
+        self._jobs["z"] = self.after(60, self.z_tick)
 
     def work_area(self):
         """작업 표시줄을 뺀, 창이 걸쳐 있는 모니터의 사용 가능 영역."""
