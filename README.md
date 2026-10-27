@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/icon.png" width="88" alt="DeskCal icon">
+<img src="docs/icon.png" width="96" alt="DeskCal icon">
 
 # DeskCal
 
@@ -9,6 +9,7 @@
 [![Release](https://img.shields.io/github/v/release/HANSEIDON/DeskCal)](https://github.com/HANSEIDON/DeskCal/releases/latest)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 [![License](https://img.shields.io/github/license/HANSEIDON/DeskCal)](LICENSE)
+
 [![PKU ISOP](https://img.shields.io/badge/PKU%20ISOP-Powered%20%E2%80%A2%20Timetable%20Import-1a1a1a?style=for-the-badge&labelColor=8A0011)](#-import-your-pku-timetable)
 
 ---
