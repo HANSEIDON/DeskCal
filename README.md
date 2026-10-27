@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/icon.png" width="96" alt="DeskCal icon">
+<img src="docs/icon.png" width="88" alt="DeskCal icon">
 
 # DeskCal
 
@@ -9,18 +9,14 @@
 [![Release](https://img.shields.io/github/v/release/HANSEIDON/DeskCal)](https://github.com/HANSEIDON/DeskCal/releases/latest)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 [![License](https://img.shields.io/github/license/HANSEIDON/DeskCal)](LICENSE)
-
-<br>
-
 [![PKU ISOP](https://img.shields.io/badge/PKU%20ISOP-Powered%20%E2%80%A2%20Timetable%20Import-1a1a1a?style=for-the-badge&labelColor=8A0011)](#-import-your-pku-timetable)
 
-<br><br>
+---
 
-<a href="https://github.com/HANSEIDON/DeskCal/releases/latest">
-  <img src="https://img.shields.io/badge/Download%20for%20Windows-v1.2.0%20Setup.exe-0078D4?style=for-the-badge&logo=windows&logoColor=white" height="38" alt="Download DeskCal">
-</a>
-<br>
-<sub>⚡ <b>1-Click Installer</b> • No Admin Rights Needed • Desktop Shortcut Included</sub>
+### [⬇️ **Download DeskCal 1.2.0 (Setup.exe)**](https://github.com/HANSEIDON/DeskCal/releases/latest)
+**Windows 10 / 11** · 1-Click Installer (~30 MB) · No Administrator Rights Required
+
+---
 
 </div>
 
