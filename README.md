@@ -51,7 +51,6 @@ and needs no account.
 
 1. Download **`DeskCal-<version>-Setup.exe`** (recommended) from [**Releases**](https://github.com/HANSEIDON/DeskCal/releases/latest) and run the installer.
    * Creates Desktop and Start Menu shortcuts automatically. No administrator rights required.
-   * Alternatively, download `DeskCal-<version>-windows-x64.zip` if you prefer a portable version without installation.
 2. Run **`DeskCal`** from your desktop or start menu. No Python needed.
 
 > [!NOTE]
@@ -62,10 +61,10 @@ and needs no account.
 <details>
 <summary>Verify the download (optional)</summary>
 
-Each release lists the zip's SHA-256 checksum. In PowerShell:
+Each release lists the installer's SHA-256 checksum. In PowerShell:
 
 ```powershell
-Get-FileHash .\DeskCal-1.2.0-windows-x64.zip
+Get-FileHash .\DeskCal-*-Setup.exe
 ```
 
 The hash should match the one on the release page.
