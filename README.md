@@ -49,9 +49,10 @@ and needs no account.
 
 ### Option 1: Download the app (recommended)
 
-1. Download `DeskCal-<version>-windows-x64.zip` from [**Releases**](https://github.com/HANSEIDON/DeskCal/releases/latest).
-2. Extract it anywhere, for example into Documents.
-3. Run **`DeskCal.exe`**. No Python or installer needed.
+1. Download **`DeskCal-<version>-Setup.exe`** (recommended) from [**Releases**](https://github.com/HANSEIDON/DeskCal/releases/latest) and run the installer.
+   * Creates Desktop and Start Menu shortcuts automatically. No administrator rights required.
+   * Alternatively, download `DeskCal-<version>-windows-x64.zip` if you prefer a portable version without installation.
+2. Run **`DeskCal`** from your desktop or start menu. No Python needed.
 
 > [!NOTE]
 > The exe isn't code-signed, so Windows may show **"Windows protected your PC"** on first
