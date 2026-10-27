@@ -2574,12 +2574,20 @@ class DeskCal(tk.Tk):
         loaded_title, loaded_vals = self._exam_loaded
         changed = False
         if title != loaded_title and self.exam_values() == loaded_vals:
-            info = self.courses.get(title, {})
-            new_vals = {k: (info.get(k + "_date", ""), info.get(k + "_time", ""))
-                        for k in EXAM_KEYS}
-            changed = new_vals != self.exam_values()
-            self.exam_vals = {k: list(v) for k, v in new_vals.items()}
-            self._exam_loaded = (title, new_vals)
+            if title in self.courses:
+                info = self.courses.get(title, {})
+                new_vals = {k: (info.get(k + "_date", ""), info.get(k + "_time", ""))
+                            for k in EXAM_KEYS}
+                changed = new_vals != self.exam_values()
+                self.exam_vals = {k: list(v) for k, v in new_vals.items()}
+                self._exam_loaded = (title, new_vals)
+            elif not loaded_title or any(it.get("title") == loaded_title for it in self.tt.values()):
+                new_vals = {k: ("", "") for k in EXAM_KEYS}
+                changed = new_vals != self.exam_values()
+                self.exam_vals = {k: list(v) for k, v in new_vals.items()}
+                self._exam_loaded = (title, new_vals)
+            else:
+                self._exam_loaded = (title, loaded_vals)
         # 한 글자 칠 때마다 다시 그리지 않는다: 값이 바뀌었거나, 과목명이
         # 생기거나 없어져서 칸을 열고 닫아야 할 때만.
         if changed or bool(title) != had_exams:
@@ -2617,6 +2625,10 @@ class DeskCal(tk.Tk):
         key = self.tt_key(*self.tt_sel)
         old = self.tt.get(key)
         keys = self.block_keys()
+        old_titles = {self.tt[k].get("title", "").strip() for k in keys if self.tt.get(k)}
+        loaded_t = getattr(self, "_tt_loaded", ("", ""))[0].strip()
+        if loaded_t:
+            old_titles.add(loaded_t)
         new = ({"title": title, "room": room, "color": self.tt_color, "week": self.tt_week}
                if title else None)
         # 빠진 항목은 기본값으로 채워 비교한다. 안 그러면 아무것도 안 고쳐도
@@ -2658,6 +2670,18 @@ class DeskCal(tk.Tk):
                     else:
                         self.tt.pop(k, None)
             self.save_tt()
+
+        active = self.active_courses()
+        cs_changed = False
+        for ot in old_titles:
+            if ot and ot not in active and ot in self.courses:
+                if title and title not in self.courses:
+                    self.courses[title] = self.courses.pop(ot)
+                    cs_changed = True
+                else:
+                    self.courses.pop(ot, None)
+                    cs_changed = True
+
         if exam_changed:
             info, old = {}, self.courses.get(title, {})
             for k, (dv, tv) in vals.items():
@@ -2669,8 +2693,14 @@ class DeskCal(tk.Tk):
                 self.courses[title] = info
             else:
                 self.courses.pop(title, None)
-            self.save_courses()
+            cs_changed = True
             self._exam_loaded = (title, vals)
+        elif cs_changed and title in self.courses:
+            self._exam_loaded = (title, vals)
+
+        if cs_changed:
+            self.save_courses()
+        self.cleanup_orphan_courses()
         self.draw_tt()
         if self.tt.get(key):
             self.del_btn.pack(side="right")
@@ -2731,12 +2761,22 @@ class DeskCal(tk.Tk):
         return self.t("dday_today") if n == 0 else ("D-%d" % n if n > 0 else self.t("dday_past"))
 
     def tt_delete(self):
-        if not any(self.tt.get(k) for k in self.block_keys()):
+        keys = self.block_keys()
+        if not any(self.tt.get(k) for k in keys):
             return
+        del_titles = {self.tt[k].get("title", "").strip() for k in keys if self.tt.get(k)}
         self.push_undo()
-        for k in self.block_keys():
+        for k in keys:
             self.tt.pop(k, None)
         self.save_tt()
+        active = self.active_courses()
+        cs_changed = False
+        for t in del_titles:
+            if t and t not in active and t in self.courses:
+                self.courses.pop(t, None)
+                cs_changed = True
+        if cs_changed:
+            self.save_courses()
         self.render()
         self.set_status("deleted")
 
@@ -2801,6 +2841,25 @@ class DeskCal(tk.Tk):
             w.bind("<Leave>", leave, add="+")
 
     # ---------- 시험 (시간표의 과목 정보를 달력에서도 보여준다) ----------
+
+    def active_courses(self):
+        """현재 시간표에 실제로 등록된 과목명 집합 (공백 제외)."""
+        return {it.get("title", "").strip() for it in self.tt.values() if it.get("title", "").strip()}
+
+    def cleanup_orphan_courses(self):
+        """시간표에서 삭제되거나 변경되어 더 이상 시간표에 존재하지 않는 과목의
+        시험·과제 정보를 courses.json 에서 정리한다."""
+        if not self.tt or not self.tt_ok:
+            return
+        active = self.active_courses()
+        orphans = [t for t in self.courses if t not in active]
+        if orphans:
+            for t in orphans:
+                self.courses.pop(t, None)
+            if self.cs_ok:
+                save_json(COURSE_FILE, self.courses)
+                log("시간표에 없는 이전 과목 시험 정보 %d개 정리: %s" %
+                    (len(orphans), ", ".join(orphans)))
 
     def normalize_exam_dates(self):
         """예전 버전은 시험 날짜를 '11-09' 처럼 연도 없이 적게 했다. 연도를 붙여 정리해

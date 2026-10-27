@@ -866,6 +866,47 @@ check(saved["mid_date"].endswith("-11-09") and len(saved["mid_date"]) == 10
 app.destroy()
 
 # ------------------------------------------------------------------
+section("시간표 수정 시 시험 정보 동기화 · 달력 잔여 데이터 방지")
+tt_bug = {"0-1": {"title": "수학", "room": "101", "color": "#e0555f", "week": "all"},
+          "0-2": {"title": "수학", "room": "101", "color": "#e0555f", "week": "all"}}
+courses_bug = {"수학": {"mid_date": "2026-11-10", "mid_time": "10:00"}}
+app, d = fresh(files={"timetable.json": tt_bug, "courses.json": courses_bug})
+exam_d = dt.date(2026, 11, 10)
+check(len(app.exams_on(exam_d)) == 1 and app.exams_on(exam_d)[0][1] == "수학",
+      "시간표 과목의 시험이 달력에 정상 표시됨")
+
+# 1. 수업 삭제 시 달력 및 courses.json 에서 시험 정보 동기화 삭제
+app.set_view("tt")
+app.tt_sel = (0, 1)
+app.render_panel()
+app.tt_delete()
+check("수학" not in app.courses and len(app.exams_on(exam_d)) == 0,
+      "시간표에서 수업 삭제 시 달력과 courses.json 에서 시험 정보도 함께 삭제됨")
+app.undo()
+check("수학" in app.courses and len(app.exams_on(exam_d)) == 1,
+      "Ctrl+Z 실행 취소 시 삭제되었던 시험 정보도 함께 복구됨")
+
+# 2. 과목명 수정(Rename) 시 시험 정보가 새 과목명으로 이전됨
+app.tt_title.delete(0, "end")
+app.tt_title.insert(0, "고급수학")
+app.tt_title_changed()
+app.tt_commit()
+check("고급수학" in app.courses and "수학" not in app.courses
+      and app.exams_on(exam_d)[0][1] == "고급수학",
+      "과목명을 변경하면 시험 정보도 새 과목명으로 수정되고 달력에 이전 과목이 남지 않음")
+app.destroy()
+
+# 3. 시간표 정리 시 시간표에 없는 이전 유령 과목 정리
+dirty = {"물리": {"fin_date": "2026-12-20", "fin_time": ""},
+         "지워진과목": {"mid_date": "2026-11-10", "mid_time": "14:00"}}
+app, d = fresh(files={"timetable.json": {"0-1": {"title": "물리", "room": "102", "color": "#4d9df5", "week": "all"}},
+                      "courses.json": dirty})
+app.cleanup_orphan_courses()
+check("지워진과목" not in app.courses and len(app.exams_on(exam_d)) == 0,
+      "시간표 정리 시 시간표에 없는 유령 과목이 정리되어 달력에 남지 않음")
+app.destroy()
+
+# ------------------------------------------------------------------
 section("exe · 윈도우 시작 시 실행")
 deskcal.RUN_NAME = "DeskCal_test_%d" % os.getpid()      # 진짜 'DeskCal' 값은 건드리지 않는다
 cmd = deskcal.launch_command()

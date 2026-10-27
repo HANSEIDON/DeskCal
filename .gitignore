@@ -3,6 +3,7 @@ data/
 error.log
 __pycache__/
 *.pyc
+*.pyd
 
 # exe build (tools/build.py)
 build/
