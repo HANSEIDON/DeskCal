@@ -19,7 +19,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 import winreg
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 FROZEN = getattr(sys, "frozen", False) or "__compiled__" in globals()   # exe(Nuitka/PyInstaller)
 RES_DIR = getattr(sys, "_MEIPASS", HERE)        # 함께 묶인 파일(글꼴)이 있는 곳
@@ -442,7 +442,8 @@ TEXT = {
         "month_title": "{y}년 {m}월",
         "tt_title": "시간표  ·  이번 주 {wk}",
         "wd_cal": ["일", "월", "화", "수", "목", "금", "토"],
-        "wd_tt": ["월", "화", "수", "목", "금"],
+        "wd_tt": ["월", "화", "수", "목", "금", "토", "일"],
+        "weekend_tt": "주말 시간표 (토·일)",
         "wd": ["월", "화", "수", "목", "금", "토", "일"],
         "day_title": "{m}월 {d}일 {wd}요일",
         "short_date": "{m}/{d} ({wd})",
@@ -498,7 +499,8 @@ TEXT = {
         "month_title": "{month} {y}",
         "tt_title": "Timetable  ·  {wk}",
         "wd_cal": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-        "wd_tt": ["Mon", "Tue", "Wed", "Thu", "Fri"],
+        "wd_tt": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        "weekend_tt": "Show Weekend (Sat/Sun)",
         "wd": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
         "day_title": "{wd}, {mon} {d}",
         "short_date": "{mon} {d} {wd}",
@@ -555,7 +557,8 @@ TEXT = {
         "month_title": "{y}年{m}月",
         "tt_title": "课表  ·  本周{wk}",
         "wd_cal": ["日", "一", "二", "三", "四", "五", "六"],
-        "wd_tt": ["周一", "周二", "周三", "周四", "周五"],
+        "wd_tt": ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+        "weekend_tt": "显示周末课表（周六/日）",
         "wd": ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
         "day_title": "{m}月{d}日 {wd}",
         "short_date": "{m}/{d} {wd}",
@@ -913,6 +916,7 @@ class DeskCal(tk.Tk):
         self.theme = self.conf.get("theme") if self.conf.get("theme") in THEMES else "dark"
         apply_theme(self.theme)
         self.view = self.conf.get("view", "cal")
+        self.weekend_tt = bool(self.conf.get("weekend_tt", False))
         self.tt_sel = (0, 1)
         self.tt_multi = None           # 드래그·Ctrl+클릭으로 고른 여러 칸 {(요일, 교시)}
         self._tt_anchor = None
@@ -1947,7 +1951,7 @@ class DeskCal(tk.Tk):
                 and a.get("week", "all") == b.get("week", "all")
 
         out = []
-        for di in range(N_DAYS):
+        for di in range(self.n_days):
             p = 1
             while p <= PERIODS:
                 it = self.tt.get(self.tt_key(di, p))
@@ -1967,7 +1971,7 @@ class DeskCal(tk.Tk):
     def period_state(self, now=None):
         """('now', 교시, 진행비율) / ('next', 교시, 0) / None. 주말이면 None."""
         now = now or dt.datetime.now()
-        if now.weekday() >= N_DAYS:
+        if now.weekday() >= self.n_days:
             return None
         m = now.hour * 60 + now.minute + now.second / 60.0
         for i, (a, b) in enumerate(self.periods[:PERIODS], 1):
@@ -2002,7 +2006,7 @@ class DeskCal(tk.Tk):
         odd_now = self.is_odd_week(self.today)
         self.tgut = max(28.0, W * 0.10)           # 교시 번호 + 시작 시각
         self.thh = max(18.0, H * 0.06)            # 요일 머리글
-        self.tcw = (W - self.tgut) / float(N_DAYS)
+        self.tcw = (W - self.tgut) / float(self.n_days)
         self.tch = (H - self.thh) / float(PERIODS)
         f_hdr = max(9, int(min(self.thh * 0.52, self.tcw * 0.20)))
         f_num = max(8, int(min(self.tch * 0.34, self.tgut * 0.30)))
@@ -2013,7 +2017,7 @@ class DeskCal(tk.Tk):
         cur_p = state[1] if state and state[0] == "now" else None
         self._now_sig = (self.today, state[:2] if state else None)
 
-        for i, d in enumerate(self.t("wd_tt")):
+        for i, d in enumerate(self.t("wd_tt")[:self.n_days]):
             x0, x1 = self.tgut + i * self.tcw, self.tgut + (i + 1) * self.tcw
             on = i == today_col
             if on:
@@ -2041,16 +2045,16 @@ class DeskCal(tk.Tk):
 
         # 지금 시각 가로선은 블록보다 먼저 그려 블록 뒤로 숨긴다. 위에 그리면
         # 과목명 글자를 가로질러 읽기 어렵다. (빈 칸에서는 보이고, 점은 위에 남긴다)
-        if state and state[0] == "now" and 0 <= today_col < N_DAYS:
+        if state and state[0] == "now" and 0 <= today_col < self.n_days:
             y = self.thh + (state[1] - 1 + state[2]) * self.tch
             lx0 = self.tgut + today_col * self.tcw
             c.create_line(lx0 + 2, y, lx0 + self.tcw - 2, y, fill=ACCENT, width=2,
                           tags="nowline")
 
         # 세로로 이어진 같은 수업은 한 블록으로 묶어 글자를 한 번만 그린다.
-        pad = self.px(3)
-        f_ttl = max(10, int(min(self.tch * 0.32, self.tcw * 0.15)))
-        f_sub = max(9, int(f_ttl * 0.82))
+        pad = self.px(2) if self.n_days == 7 else self.px(3)
+        f_ttl = max(8, int(min(self.tch * 0.32, self.tcw * 0.15)))
+        f_sub = max(8, int(f_ttl * 0.82))
         boxes, now_boxes = {}, {}
         for di, p, span, it in self.tt_blocks():
             kind = it.get("week", "all")
@@ -2106,7 +2110,7 @@ class DeskCal(tk.Tk):
                        outline=mix(FG, BG, 0.30), width=2)
 
         # 지금 수업 (쉬는 시간이면 다음 수업)
-        if state and 0 <= today_col < N_DAYS:
+        if state and 0 <= today_col < self.n_days:
             kind_s, p, frac = state
             box = now_boxes.get((today_col, p)) or (
                 self.tgut + today_col * self.tcw + pad, self.thh + (p - 1) * self.tch + pad,
@@ -2137,8 +2141,8 @@ class DeskCal(tk.Tk):
         di = int((e.x - self.tgut) // self.tcw)
         p = int((e.y - self.thh) // self.tch) + 1
         if clamp:                              # 드래그 중엔 표 밖으로 나가도 끝 칸으로
-            return min(max(di, 0), N_DAYS - 1), min(max(p, 1), PERIODS)
-        if e.x < self.tgut or e.y < self.thh or not (0 <= di < N_DAYS and 1 <= p <= PERIODS):
+            return min(max(di, 0), self.n_days - 1), min(max(p, 1), PERIODS)
+        if e.x < self.tgut or e.y < self.thh or not (0 <= di < self.n_days and 1 <= p <= PERIODS):
             return None
         return di, p
 
@@ -3334,6 +3338,7 @@ class DeskCal(tk.Tk):
         self.radio(wk, self.t("set_odd"), odd, lambda: self.set_week_kind(True))
         self.radio(wk, self.t("set_even"), not odd, lambda: self.set_week_kind(False))
         m.add_cascade(label=self.t("parity"), menu=wk)
+        self.radio(m, self.t("weekend_tt"), self.weekend_tt, self.toggle_weekend_tt)
 
         on = autostart_enabled()
         self.radio(m, self.t("autostart"), on, lambda: self.set_autostart_pref(not on))
@@ -3351,6 +3356,20 @@ class DeskCal(tk.Tk):
             m.add_command(label="██████", foreground=col, activeforeground=col,
                           command=lambda c=col, i=idx: self.apply_color(i, c))
         self.popup(m, e)
+
+    @property
+    def n_days(self):
+        return 7 if getattr(self, "weekend_tt", False) else 5
+
+    def toggle_weekend_tt(self):
+        self.weekend_tt = not self.weekend_tt
+        self.conf["weekend_tt"] = self.weekend_tt
+        self.save_conf()
+        if self.tt_sel[0] >= self.n_days:
+            self.tt_sel = (0, self.tt_sel[1])
+        if self.tt_multi:
+            self.tt_multi = {(di, p) for di, p in self.tt_multi if di < self.n_days}
+        self.render()
 
     def init_autostart(self):
         """처음 켤 때는 '윈도우 시작 시 실행'을 켜 둔다. 메뉴에서 끈 뒤에는 다시 켜지 않는다."""

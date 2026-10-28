@@ -9,6 +9,10 @@ import json
 import os
 import shutil
 import sys
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import tempfile
 import time
 
@@ -961,6 +965,24 @@ deskcal.user32.SetWindowPos = orig_SetWindowPos
 app.destroy()
 
 # ------------------------------------------------------------------
+section("주말 시간표 토글 (5일 / 7일)")
+app, d = fresh()
+check(app.weekend_tt is False and app.n_days == 5, "기본은 주말 숨김 (5일)")
+app.toggle_weekend_tt()
+check(app.weekend_tt is True and app.n_days == 7, "토글 시 주말 표시 (7일)")
+check(json.load(open(deskcal.CONF_FILE))["weekend_tt"] is True, "설정 파일에 weekend_tt 저장")
+app.tt[app.tt_key(5, 1)] = {"title": "주말수업", "room": "이교101", "color": "#ff8888", "week": "all"}
+app.tt[app.tt_key(5, 2)] = {"title": "주말수업", "room": "이교101", "color": "#ff8888", "week": "all"}
+app.render()
+blocks = app.tt_blocks()
+sat_blocks = [b for b in blocks if b[0] == 5]
+check(len(sat_blocks) == 1 and sat_blocks[0][2] == 2, "토요일 1~2교시 연강 블록 병합 (span=2)")
+app.tt_sel = (5, 1)
+app.toggle_weekend_tt()
+check(app.weekend_tt is False and app.n_days == 5, "다시 5일 모드로 전환")
+check(app.tt_sel[0] == 0, "5일 모드 전환 시 범위 벗어난 선택(토요일)이 월요일(0)로 자동 보정됨")
+app.destroy()
+
 section("exe · 윈도우 시작 시 실행")
 deskcal.RUN_NAME = "DeskCal_test_%d" % os.getpid()      # 진짜 'DeskCal' 값은 건드리지 않는다
 cmd = deskcal.launch_command()
