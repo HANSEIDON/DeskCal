@@ -14,7 +14,7 @@
 
 ---
 
-### [⬇️ **Download DeskCal 1.2.0 (Setup.exe)**](https://github.com/HANSEIDON/DeskCal/releases/latest)
+### [⬇️ **Download DeskCal 1.2.1 (Setup.exe)**](https://github.com/HANSEIDON/DeskCal/releases/latest)
 **Windows 10 / 11** · 1-Click Installer (~30 MB) · No Administrator Rights Required
 
 ---
@@ -25,7 +25,7 @@ DeskCal sits on your Windows desktop, just above the wallpaper. Deadlines, exams
 选课 dates and your weekly timetable are always one glance away. It runs fully offline
 and needs no account.
 
-> **New in 1.2.0 — [import your official 课表](#-import-your-pku-timetable).** DeskCal is powered by Peking University's official data platform (ISOP), so it can load your real
+> **New in 1.2.1 — [Weekend timetable support](#-features). Added 7-day timetable view (Saturday & Sunday) with smart auto-detection on PKU timetable import.** DeskCal is powered by Peking University's official data platform (ISOP), so it can load your real
 > timetable and exam dates straight from the university instead of you typing them in.
 
 ![Calendar view, dark theme](docs/calendar-dark.png)
@@ -36,7 +36,7 @@ and needs no account.
   platform — review what changed, then apply ([details](#-import-your-pku-timetable)).
 - 📅 **Calendar with notes**: click a day and type. Color it, tick it off, edit in place.
 - ⏰ **Upcoming deadlines** with D-day badges. Orange within a week, red for today and tomorrow.
-- 🗓️ **Timetable**: Mon–Fri, 12 periods on PKU's schedule. The current class is highlighted.
+- 🗓️ **Timetable**: 5-day (Mon–Fri) or 7-day (Mon–Sun) view, 12 periods on PKU's schedule. The current class is highlighted.
 - 🔁 **Odd / even weeks** (单周 / 双周). Classes not meeting this week are shown dashed.
 - 📝 **Exams on the calendar**: midterm, final and project deadlines per course appear on the
   calendar and in Upcoming.
@@ -167,7 +167,7 @@ add 12 entries to `config.json`:
 
 DeskCal is built to sit on your desktop all day without you noticing it.
 
-| | DeskCal 1.2.0 (exe) |
+| | DeskCal 1.2.1 (exe) |
 | --- | --- |
 | Startup | about 1 second |
 | Memory | about 73 MB |
