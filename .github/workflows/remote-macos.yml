@@ -48,17 +48,42 @@ jobs:
 
       - name: Install and Start ngrok TCP Tunnel
         env:
-          NGROK_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+          NGROK_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN || secrets.NGROK_TOKEN }}
         run: |
-          brew install ngrok/ngrok/ngrok || brew install --cask ngrok
-          ngrok config add-authtoken $NGROK_TOKEN
+          if [ -z "$NGROK_TOKEN" ]; then
+            echo "❌ ERROR: NGROK_AUTH_TOKEN (또는 NGROK_TOKEN) Secret이 비어있습니다!"
+            echo "GitHub Settings -> Secrets and variables -> Actions 에 NGROK_AUTH_TOKEN 을 확인해주세요."
+            exit 1
+          fi
+
+          # 초고속 직접 바이너리 설치 (Homebrew 지연 방지)
+          if ! command -v ngrok &> /dev/null; then
+            echo "Downloading ngrok for macOS arm64..."
+            curl -sSL https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-darwin-arm64.zip -o /tmp/ngrok.zip
+            sudo unzip -o /tmp/ngrok.zip -d /usr/local/bin/
+            sudo chmod +x /usr/local/bin/ngrok
+          fi
+
+          ngrok config add-authtoken "$NGROK_TOKEN"
           ngrok tcp 5900 --log=stdout > ngrok.log 2>&1 &
-          sleep 6
           
-          # ngrok API에서 공개 접속 주소 추출
-          TUNNEL_INFO=$(curl -s http://127.0.0.1:4040/api/tunnels)
-          VNC_URL=$(echo "$TUNNEL_INFO" | grep -o 'tcp://[^"]*' | head -n 1 | sed 's/tcp:\/\///')
-          
+          # ngrok 터널 준비 대기 (최대 15초)
+          VNC_URL=""
+          for i in {1..15}; do
+            TUNNEL_INFO=$(curl -s http://127.0.0.1:4040/api/tunnels || true)
+            VNC_URL=$(echo "$TUNNEL_INFO" | grep -o 'tcp://[^"]*' | head -n 1 | sed 's/tcp:\/\///')
+            if [ -n "$VNC_URL" ]; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [ -z "$VNC_URL" ]; then
+            echo "❌ ngrok 터널을 생성하지 못했습니다. ngrok 로그 출력:"
+            cat ngrok.log
+            exit 1
+          fi
+
           echo "=========================================================="
           echo "🎉 macOS 클라우드 원격 데스크톱 접속 정보가 준비되었습니다!"
           echo ""
