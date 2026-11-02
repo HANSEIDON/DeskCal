@@ -1,0 +1,76 @@
+name: Remote macOS Desktop (VNC)
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: '세션 유지 시간 (분 단위, 최대 120분)'
+        required: false
+        default: '60'
+
+jobs:
+  remote-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: |
+          pip install nuitka ordered-set zstandard pyobjc-framework-Cocoa pyobjc-framework-Quartz
+
+      - name: Compile macOS C++ Module & Build DeskCal
+        run: |
+          python tools/build_mac.py || true
+
+      - name: Configure macOS Screen Sharing & VNC
+        run: |
+          # runner 계정 비밀번호 설정
+          sudo dscl . -passwd /Users/runner deskcal123
+          
+          # VNC 원격 데스크톱 활성화 (비밀번호: deskcal123)
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -activate -configure -access -on \
+            -clientopts -setvnclegacy -vnclegacy yes \
+            -clientopts -setvncpw -vncpw deskcal123 \
+            -restart -agent -privs -all
+
+      - name: Install and Start ngrok TCP Tunnel
+        env:
+          NGROK_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        run: |
+          brew install ngrok/ngrok/ngrok
+          ngrok config add-authtoken $NGROK_TOKEN
+          ngrok tcp 5900 --log=stdout > ngrok.log 2>&1 &
+          sleep 5
+          
+          # ngrok API에서 공개 접속 주소 추출
+          TUNNEL_INFO=$(curl -s http://127.0.0.1:4040/api/tunnels)
+          VNC_URL=$(echo "$TUNNEL_INFO" | grep -o 'tcp://[^"]*' | head -n 1 | sed 's/tcp:\/\///')
+          
+          echo "=========================================================="
+          echo "🎉 macOS 클라우드 원격 데스크톱 접속 정보가 준비되었습니다!"
+          echo ""
+          echo "👉 VNC 접속 주소: $VNC_URL"
+          echo "👉 접속 비밀번호: deskcal123"
+          echo "=========================================================="
+
+      - name: Launch DeskCal on macOS Desktop
+        run: |
+          # GUI 데스크톱 세션에 DeskCal 실행
+          if [ -d "build/DeskCal.app" ]; then
+            open "build/DeskCal.app" &
+          else
+            python3 deskcal.py &
+          fi
+
+      - name: Keep Session Alive
+        run: |
+          MINS=${{ github.event.inputs.duration_minutes || '60' }}
+          echo "원격 세션을 ${MINS}분 동안 유지합니다. 테스트가 끝나면 GitHub Actions에서 'Cancel workflow'를 누르시면 종료됩니다."
+          sleep $((MINS * 60))
