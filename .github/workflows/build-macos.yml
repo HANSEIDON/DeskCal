@@ -1,0 +1,54 @@
+name: Build macOS Release
+
+on:
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+      - feature/macos-support
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Build Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install nuitka ordered-set zstandard pyobjc-framework-Cocoa pyobjc-framework-Quartz
+
+      - name: Run macOS Build Pipeline (.app & .dmg)
+        run: |
+          python tools/build_mac.py
+
+      - name: Upload Build Artifacts (DMG & ZIP)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeskCal-macOS
+          path: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+            dist/*.zip
+            dist/*.zip.sha256
+
+      - name: Release Assets (Only on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+            dist/*.zip
+            dist/*.zip.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
