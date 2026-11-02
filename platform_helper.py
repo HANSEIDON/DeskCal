@@ -175,6 +175,7 @@ def setup_macos_window(tk_root, is_dark=True):
     try:
         import AppKit
         import objc
+        from ctypes import c_void_p
 
         # Tkinter 창의 Cocoa NSWindow 인스턴스 획득
         # winfo_id()는 X11 ID 또는 NSView 포인터를 반환한다

@@ -11,3 +11,9 @@ dist/
 .build-venv/
 mingw.zip
 mingw*/
+*.so
+*.dylib
+scratch/
+vnc*
+tvn*
+mac_screen*
