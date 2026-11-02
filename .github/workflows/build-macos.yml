@@ -30,7 +30,7 @@ jobs:
       - name: Install Build Dependencies
         run: |
           pip install --upgrade pip
-          pip install pyinstaller pyobjc-framework-Cocoa pyobjc-framework-Quartz
+          pip install pillow pyinstaller pyobjc-framework-Cocoa pyobjc-framework-Quartz
 
       - name: Run macOS Build Pipeline (.app & .dmg)
         run: |
