@@ -17,7 +17,20 @@ import time
 import traceback
 import tkinter as tk
 import tkinter.font as tkfont
-import winreg
+
+from platform_helper import (
+    IS_WIN, IS_MAC, get_default_data_dir, setup_dpi,
+    is_autostart_enabled, set_autostart as set_autostart_platform,
+    get_platform_fonts, setup_macos_window, get_shortcut_keys
+)
+
+if IS_WIN:
+    try:
+        import winreg
+    except ImportError:
+        winreg = None
+else:
+    winreg = None
 
 __version__ = "1.2.1"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -213,6 +226,8 @@ def _glass_init():
 
 def make_glass(x, y, w, h, tint, alpha, shrink=72):
     """화면 좌표 (x,y,w,h) 뒤의 바탕화면을 흐리게 해 BGRA 바이트로 돌려준다. 실패하면 None."""
+    if not IS_WIN:
+        return None
     try:
         _glass_init()
     except Exception:
@@ -406,16 +421,24 @@ def round_rect(c, x0, y0, x1, y1, r, **kw):
 # Noto Sans CJK SC 는 간체 중국어·한글·라틴을 모두 갖고 있어 하나로 통일된다.
 # fonts 폴더가 없을 때는 그 언어를 제대로 쓰는 Windows 기본 글꼴로 물러난다.
 # (중국어 화면에 맑은 고딕을 쓰면 간체자가 다른 글꼴에서 섞여 들어온다)
-FONT_PREFS = {"zh": ["Noto Sans CJK SC", "Microsoft YaHei UI", "Microsoft YaHei"],
-              "other": ["Noto Sans CJK SC", "Malgun Gothic"]}
-FONT = "Malgun Gothic"
+if IS_MAC:
+    FONT_PREFS = {
+        "zh": ["PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Arial"],
+        "ko": ["Apple SD Gothic Neo", "Noto Sans CJK KR", "Arial"],
+        "other": ["Apple SD Gothic Neo", "PingFang SC", ".AppleSystemUIFont", "Helvetica Neue", "Arial"]
+    }
+    FONT = "Apple SD Gothic Neo"
+else:
+    FONT_PREFS = {"zh": ["Noto Sans CJK SC", "Microsoft YaHei UI", "Microsoft YaHei"],
+                  "other": ["Noto Sans CJK SC", "Malgun Gothic"]}
+    FONT = "Malgun Gothic"
 _fonts_loaded = False
 
 
 def load_private_fonts():
     """fonts 폴더의 글꼴을 이 프로세스 안에서만 쓰도록 불러온다 (시스템 설치 없음)."""
     global _fonts_loaded
-    if _fonts_loaded:
+    if _fonts_loaded or not IS_WIN:
         return
     _fonts_loaded = True
     gdi = ctypes.windll.gdi32
@@ -615,10 +638,13 @@ MONTHS_EN = ["January", "February", "March", "April", "May", "June", "July",
 SIZES = [(520, 400), (640, 490), (780, 590), (940, 710), (1120, 850)]
 DEFAULT_SIZE = 2
 
-# ---------- Win32 ----------
-user32 = ctypes.windll.user32
-kernel32 = ctypes.windll.kernel32
-dwmapi = ctypes.windll.dwmapi
+# ---------- 플랫폼 네이티브 API (Win32 / Cocoa) ----------
+if IS_WIN:
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    dwmapi = ctypes.windll.dwmapi
+else:
+    user32 = kernel32 = dwmapi = None
 
 
 class RECT(ctypes.Structure):
@@ -634,7 +660,8 @@ class MONITORINFO(ctypes.Structure):
 # 창 핸들은 포인터 크기다. 형을 안 정하면 ctypes 가 32비트 int 로 넘겨
 # HWND_TOPMOST(-1) 같은 값이 깨진다 (DPI 설정이 조용히 실패했던 것과 같은 함정).
 _H = ctypes.c_void_p
-user32.GetForegroundWindow.restype = _H
+if IS_WIN:
+    user32.GetForegroundWindow.restype = _H
 user32.GetParent.restype = _H
 user32.GetParent.argtypes = [_H]
 user32.FindWindowW.restype = _H
@@ -692,19 +719,23 @@ _CLASS_BUF = ctypes.create_unicode_buffer(64)
 
 
 def win_class(h):
-    if not h:
+    if not h or not IS_WIN:
         return ""
     user32.GetClassNameW(h, _CLASS_BUF, 64)
     return _CLASS_BUF.value
 
 
 def win_pid(h):
+    if not IS_WIN:
+        return 0
     pid = ctypes.c_ulong(0)
     user32.GetWindowThreadProcessId(h, ctypes.byref(pid))
     return pid.value
 
 
 def is_cloaked(h):
+    if not IS_WIN:
+        return False
     v = ctypes.c_int(0)
     dwmapi.DwmGetWindowAttribute(_H(h), 14, ctypes.byref(v), 4)   # DWMWA_CLOAKED
     return v.value != 0
@@ -714,28 +745,7 @@ DPI_MODE = "미설정"   # 모듈로 불러 쓸 때(테스트 등)를 위한 기
 
 
 def set_dpi_awareness():
-    """반환값을 반드시 확인한다. 이 API 들은 실패해도 예외를 던지지 않아서,
-    try/except 만 걸어두면 실패를 놓치고 대비책이 실행되지 않는다."""
-    try:
-        user32.SetProcessDpiAwarenessContext.argtypes = [_H]
-        user32.SetProcessDpiAwarenessContext.restype = ctypes.c_bool
-        if user32.SetProcessDpiAwarenessContext(_H(-4)):      # per-monitor v2
-            return "per-monitor-v2"
-    except Exception:
-        pass
-    try:
-        if ctypes.windll.shcore.SetProcessDpiAwareness(2) == 0:
-            return "per-monitor"
-        if ctypes.windll.shcore.SetProcessDpiAwareness(1) == 0:
-            return "system"
-    except Exception:
-        pass
-    try:
-        if user32.SetProcessDPIAware():
-            return "system(legacy)"
-    except Exception:
-        pass
-    return "none"
+    return setup_dpi()
 
 
 # ---------- 윈도우 시작 시 실행 ----------
@@ -754,27 +764,11 @@ def launch_command():
 
 
 def autostart_enabled():
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
-            winreg.QueryValueEx(k, RUN_NAME)
-        return True
-    except OSError:
-        return False
+    return is_autostart_enabled()
 
 
 def set_autostart(on):
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
-            if on:
-                winreg.SetValueEx(k, RUN_NAME, 0, winreg.REG_SZ, launch_command())
-            else:
-                try:
-                    winreg.DeleteValue(k, RUN_NAME)
-                except FileNotFoundError:
-                    pass
-        log("윈도우 시작 시 실행: %s" % ("켬" if on else "끔"))
-    except OSError:
-        log("윈도우 시작 시 실행 설정 실패:\n" + traceback.format_exc())
+    set_autostart_platform(on, frozen=FROZEN, log_func=log)
 
 
 # ---------- 파일 ----------
@@ -987,20 +981,29 @@ class DeskCal(tk.Tk):
         self.build()
 
         self.update_idletasks()
-        self.hwnd = user32.GetParent(self.winfo_id()) or self.winfo_id()
-        user32.SetWindowLongW(self.hwnd, GWL_EXSTYLE,
-                              user32.GetWindowLongW(self.hwnd, GWL_EXSTYLE)
-                              | WS_EX_TOOLWINDOW)
-        self.attributes("-topmost", not self.pinned)
-        try:                      # Windows 11: 창 모서리를 둥글게
-            corner = ctypes.c_int(2)
-            dwmapi.DwmSetWindowAttribute(_H(self.hwnd), 33, ctypes.byref(corner), 4)
-        except Exception:
-            pass
-        self.ensure_on_screen()   # hwnd 가 정해진 뒤여야 한다
-        self.bind("<FocusOut>", lambda _: self.after(120, self.sync_z))
+        if IS_WIN:
+            self.hwnd = user32.GetParent(self.winfo_id()) or self.winfo_id()
+            user32.SetWindowLongW(self.hwnd, GWL_EXSTYLE,
+                                  user32.GetWindowLongW(self.hwnd, GWL_EXSTYLE)
+                                  | WS_EX_TOOLWINDOW)
+            self.attributes("-topmost", not self.pinned)
+            try:                      # Windows 11: 창 모서리를 둥글게
+                corner = ctypes.c_int(2)
+                dwmapi.DwmSetWindowAttribute(_H(self.hwnd), 33, ctypes.byref(corner), 4)
+            except Exception:
+                pass
+            self.ensure_on_screen()   # hwnd 가 정해진 뒤여야 한다
+            self.bind("<FocusOut>", lambda _: self.after(120, self.sync_z))
+        elif IS_MAC:
+            self.hwnd = None
+            setup_macos_window(self, self.theme == "dark")
+            self.ensure_on_screen()
+
         self.bind_all("<Control-z>", self.undo)
         self.bind_all("<Control-Z>", self.undo)
+        if IS_MAC:
+            self.bind_all("<Command-z>", self.undo)
+            self.bind_all("<Command-Z>", self.undo)
         # 한글 입력 상태에서는 <Control-c> 같은 문자 기반 바인딩이 안 걸린다.
         # 키코드로 직접 보면 입력기와 무관하게 동작한다.
         self.bind_class("Entry", "<Control-KeyPress>", self.on_ctrl_key)
@@ -1355,12 +1358,15 @@ class DeskCal(tk.Tk):
 
     def work_area(self):
         """작업 표시줄을 뺀, 창이 걸쳐 있는 모니터의 사용 가능 영역."""
-        hmon = user32.MonitorFromWindow(self.hwnd, MONITOR_NEAREST)
-        mi = MONITORINFO()
-        mi.cbSize = ctypes.sizeof(MONITORINFO)
-        if hmon and user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
-            r = mi.rcWork
-            return r.left, r.top, r.right, r.bottom
+        if IS_WIN and user32 and self.hwnd:
+            hmon = user32.MonitorFromWindow(self.hwnd, MONITOR_NEAREST)
+            mi = MONITORINFO()
+            mi.cbSize = ctypes.sizeof(MONITORINFO)
+            if hmon and user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+                r = mi.rcWork
+                return r.left, r.top, r.right, r.bottom
+        if IS_MAC:
+            return 0, 25, self.winfo_screenwidth(), self.winfo_screenheight() - 70
         return 0, 0, self.winfo_screenwidth(), self.winfo_screenheight()
 
     def ensure_on_screen(self):
@@ -3344,7 +3350,7 @@ class DeskCal(tk.Tk):
         self.radio(m, self.t("autostart"), on, lambda: self.set_autostart_pref(not on))
         m.add_separator()
         m.add_command(label=self.t("open_data"),
-                      command=lambda: subprocess.Popen(["explorer", APP_DIR]))
+                      command=lambda: subprocess.Popen(["open" if IS_MAC else "explorer", APP_DIR]))
         m.add_command(label=self.t("quit"), command=self.quit_app)
         self.popup(m, e)
 
@@ -3384,9 +3390,10 @@ class DeskCal(tk.Tk):
     def screen_rect(self):
         """위젯의 실제 화면 위치 (x, y, 너비, 높이). 바탕화면에 붙어 있으면 winfo_root* 가
         바탕화면 기준 좌표를 돌려줘서 안내창이 왼쪽 위로 가므로 Win32 로 직접 잰다."""
-        r = RECT()
-        if user32.GetWindowRect(self.hwnd, ctypes.byref(r)) and r.right > r.left:
-            return r.left, r.top, r.right - r.left, r.bottom - r.top
+        if IS_WIN and user32 and self.hwnd:
+            r = RECT()
+            if user32.GetWindowRect(self.hwnd, ctypes.byref(r)) and r.right > r.left:
+                return r.left, r.top, r.right - r.left, r.bottom - r.top
         return self.winfo_rootx(), self.winfo_rooty(), self.w(), self.winfo_height()
 
     def place_dialog(self, top):
@@ -3443,21 +3450,32 @@ class DeskCal(tk.Tk):
 
 
 def already_running():
-    global _mutex
-    _mutex = kernel32.CreateMutexW(None, False, "DeskCal_single_instance")
-    if kernel32.GetLastError() != ERROR_ALREADY_EXISTS:
-        return False
-    hwnd = user32.FindWindowW(None, WIN_TITLE)
-    if hwnd:
-        # 사용자가 방금 누른 이 프로그램은 앞 창이 될 권리가 있다. 그 권리를 켜져 있는
-        # 위젯에 넘겨줘야 위젯이 스스로 활성 창이 될 수 있다.
-        user32.AllowSetForegroundWindow(win_pid(hwnd))
-    ev = kernel32.OpenEventW(0x0002, False, SUMMON_EVENT)     # EVENT_MODIFY_STATE
-    if ev:
-        kernel32.SetEvent(ev)
-        kernel32.CloseHandle(ev)
-        log("이미 실행 중 - 기존 창을 불러냄")
-    return True
+    if IS_WIN:
+        global _mutex
+        _mutex = kernel32.CreateMutexW(None, False, "DeskCal_single_instance")
+        if kernel32.GetLastError() != ERROR_ALREADY_EXISTS:
+            return False
+        hwnd = user32.FindWindowW(None, WIN_TITLE)
+        if hwnd:
+            user32.AllowSetForegroundWindow(win_pid(hwnd))
+        ev = kernel32.OpenEventW(0x0002, False, SUMMON_EVENT)     # EVENT_MODIFY_STATE
+        if ev:
+            kernel32.SetEvent(ev)
+            kernel32.CloseHandle(ev)
+            log("이미 실행 중 - 기존 창을 불러냄")
+        return True
+    elif IS_MAC:
+        try:
+            import fcntl
+            global _lock_file
+            lock_path = os.path.join(APP_DIR, "deskcal.lock")
+            _lock_file = open(lock_path, "w")
+            fcntl.flock(_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return False
+        except Exception:
+            log("이미 실행 중 (macOS lockfile)")
+            return True
+    return False
 
 
 def start_stall_watch(app):
