@@ -52,7 +52,7 @@ def main():
     src_cpp = os.path.join(TOOLS, "_isop_client_mac.cpp")
     out_so = os.path.join(ROOT, "_isop_client.so")
 
-    if os.path.exists(src_cpp):
+    if os.path.exists(src_cpp) and not os.path.exists(out_so):
         py_include = sysconfig.get_path("include")
         clang_cmd = [
             "clang++",
@@ -71,47 +71,50 @@ def main():
         except Exception as e:
             print(f"Warning: Failed to compile _isop_client_mac.cpp ({e}). Proceeding without ISOP.")
 
-    # --- Step 2: Nuitka Machine-Code Compilation (.app Bundle) ---
-    print("\n[2/4] Compiling with Nuitka (Python -> C -> Mach-O binary)...")
+    # --- Step 2: Packaging Standalone macOS .app Bundle ---
+    print("\n[2/4] Packaging Standalone macOS .app Bundle...")
     app_name = "DeskCal"
     icon_png = os.path.join(ROOT, "docs", "icon.png")
 
-    nuitka_cmd = [
-        sys.executable, "-m", "nuitka",
-        "--standalone",
-        "--macos-create-app-bundle",
-        f"--macos-app-name={app_name}",
-        "--assume-yes-for-downloads",
-        "--output-dir=build",
+    pyi_cmd = [
+        sys.executable, "-m", "PyInstaller",
+        "--noconfirm",
+        "--onedir",
+        "--windowed",
+        f"--name={app_name}",
+        f"--distpath={BUILD}",
+        f"--workpath={os.path.join(BUILD, 'pyi_work')}",
+        "--hidden-import=AppKit",
+        "--hidden-import=Foundation",
+        "--hidden-import=objc",
+        "--hidden-import=platform_helper",
     ]
 
     if os.path.exists(icon_png):
-        nuitka_cmd.append(f"--macos-app-icon={icon_png}")
+        pyi_cmd.append(f"--icon={icon_png}")
 
-    # Include data and docs
-    if os.path.exists(os.path.join(ROOT, "data")):
-        nuitka_cmd.append(f"--include-data-dir={os.path.join(ROOT, 'data')}=data")
+    # Include docs & assets
     if os.path.exists(os.path.join(ROOT, "docs")):
-        nuitka_cmd.append(f"--include-data-dir={os.path.join(ROOT, 'docs')}=docs")
+        pyi_cmd.append(f"--add-data={os.path.join(ROOT, 'docs')}:docs")
 
-    # If _isop_client.so was compiled, include it in the root of the app
+    # If _isop_client.so exists, include as native binary
     if os.path.exists(out_so):
-        nuitka_cmd.append(f"--include-data-files={out_so}=_isop_client.so")
+        pyi_cmd.append(f"--add-binary={out_so}:.")
 
-    nuitka_cmd.append(os.path.join(ROOT, "deskcal.py"))
+    pyi_cmd.append(os.path.join(ROOT, "deskcal.py"))
 
-    run(*nuitka_cmd)
+    run(*pyi_cmd)
 
     # Locate generated .app bundle
-    app_bundle = os.path.join(BUILD, "deskcal.app")
+    app_bundle = os.path.join(BUILD, f"{app_name}.app")
     if not os.path.exists(app_bundle):
-        # Alternative path depending on Nuitka output naming
-        alt = os.path.join(BUILD, f"{app_name}.app")
+        # Fallback check
+        alt = os.path.join(BUILD, "deskcal.app")
         if os.path.exists(alt):
             app_bundle = alt
 
     if not os.path.exists(app_bundle):
-        raise RuntimeError("Nuitka build did not generate .app bundle!")
+        raise RuntimeError(f"Build did not generate .app bundle at {app_bundle}!")
 
     print(f"Generated App Bundle: {app_bundle}")
 

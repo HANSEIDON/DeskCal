@@ -30,7 +30,18 @@ jobs:
       - name: Install Build Dependencies
         run: |
           pip install --upgrade pip
-          pip install nuitka ordered-set zstandard pyobjc-framework-Cocoa pyobjc-framework-Quartz
+          pip install pyinstaller pyobjc-framework-Cocoa pyobjc-framework-Quartz
+
+      - name: Compile Native C++ ISOP Client
+        run: |
+          clang++ -std=c++17 -O3 -shared -undefined dynamic_lookup \
+            -I$(python3 -c "import sysconfig; print(sysconfig.get_path('include'))") \
+            tools/_isop_client_mac.cpp -lcurl -o _isop_client.so
+          ls -lh _isop_client.so
+
+      - name: Run macOS Native Automated Tests
+        run: |
+          python -m unittest tests/test_macos_native.py -v
 
       - name: Run macOS Build Pipeline (.app & .dmg)
         run: |
