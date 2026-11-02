@@ -3,6 +3,10 @@ name: Remote macOS Desktop (VNC)
 on:
   workflow_dispatch:
     inputs:
+      branch:
+        description: '테스트할 브랜치'
+        required: false
+        default: 'feature/macos-support'
       duration_minutes:
         description: '세션 유지 시간 (분 단위, 최대 120분)'
         required: false
@@ -14,6 +18,8 @@ jobs:
     steps:
       - name: Checkout Source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || 'feature/macos-support' }}
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -22,7 +28,8 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install nuitka ordered-set zstandard pyobjc-framework-Cocoa pyobjc-framework-Quartz
+          pip install --upgrade pip
+          pip install pyobjc-framework-Cocoa pyobjc-framework-Quartz nuitka ordered-set zstandard
 
       - name: Compile macOS C++ Module & Build DeskCal
         run: |
@@ -31,23 +38,22 @@ jobs:
       - name: Configure macOS Screen Sharing & VNC
         run: |
           # runner 계정 비밀번호 설정
-          sudo dscl . -passwd /Users/runner deskcal123
+          sudo dscl . -passwd /Users/runner deskcal123 || true
           
           # VNC 원격 데스크톱 활성화 (비밀번호: deskcal123)
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
-            -activate -configure -access -on \
-            -clientopts -setvnclegacy -vnclegacy yes \
-            -clientopts -setvncpw -vncpw deskcal123 \
-            -restart -agent -privs -all
+            -activate -configure -allowAccessFor -allUsers -privs -all \
+            -clientopts -setvnclegacy -vnclegacy yes -setvncpw -vncpw deskcal123 \
+            -restart -agent || true
 
       - name: Install and Start ngrok TCP Tunnel
         env:
           NGROK_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
         run: |
-          brew install ngrok/ngrok/ngrok
+          brew install ngrok/ngrok/ngrok || brew install --cask ngrok
           ngrok config add-authtoken $NGROK_TOKEN
           ngrok tcp 5900 --log=stdout > ngrok.log 2>&1 &
-          sleep 5
+          sleep 6
           
           # ngrok API에서 공개 접속 주소 추출
           TUNNEL_INFO=$(curl -s http://127.0.0.1:4040/api/tunnels)
