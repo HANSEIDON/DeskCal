@@ -16,6 +16,10 @@ on:
 jobs:
   test-macos:
     runs-on: macos-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"       # 세그폴트로 죽어도 버퍼가 날아가지 않게
+      PYTHONFAULTHANDLER: "1"     # 네이티브 크래시 시 파이썬 트레이스백을 남긴다
     steps:
       - uses: actions/checkout@v4
 
