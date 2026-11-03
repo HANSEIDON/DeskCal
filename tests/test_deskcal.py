@@ -988,27 +988,30 @@ check(app.tt_sel[0] == 0, "5일 모드 전환 시 범위 벗어난 선택(토요
 app.destroy()
 
 section("exe · 윈도우 시작 시 실행")
-deskcal.RUN_NAME = "DeskCal_test_%d" % os.getpid()      # 진짜 'DeskCal' 값은 건드리지 않는다
-cmd = deskcal.launch_command()
-check("deskcal.py" in cmd and cmd.endswith("--autostart") and "pythonw" in cmd.lower(),
-      "스크립트 실행 명령: %s" % cmd)
-deskcal.set_autostart(True)
-check(deskcal.autostart_enabled(), "켜면 레지스트리에 등록됨")
-deskcal.set_autostart(False)
-check(not deskcal.autostart_enabled(), "끄면 지워짐")
-app, d = fresh()
-app.init_autostart()
-check(deskcal.autostart_enabled() and json.load(open(deskcal.CONF_FILE))["autostart"] is True,
-      "처음 켜면 자동 실행이 켜짐")
-app.set_autostart_pref(False)
-app.init_autostart()
-check(not deskcal.autostart_enabled(), "메뉴에서 끄면 다음에 켜도 다시 켜지지 않음")
-app.destroy()
-deskcal.FROZEN = True
-check(deskcal.default_data_dir() == os.path.join(os.environ["LOCALAPPDATA"], "DeskCal"),
-      "exe 는 %LOCALAPPDATA%\\DeskCal 에 저장")
-deskcal.FROZEN = False
-check(deskcal.default_data_dir() == os.path.join(deskcal.HERE, "data"), "스크립트는 옆 data 폴더")
+if deskcal.IS_WIN:
+    deskcal.RUN_NAME = "DeskCal_test_%d" % os.getpid()      # 진짜 'DeskCal' 값은 건드리지 않는다
+    cmd = deskcal.launch_command()
+    check("deskcal.py" in cmd and cmd.endswith("--autostart") and "pythonw" in cmd.lower(),
+          "스크립트 실행 명령: %s" % cmd)
+    deskcal.set_autostart(True)
+    check(deskcal.autostart_enabled(), "켜면 레지스트리에 등록됨")
+    deskcal.set_autostart(False)
+    check(not deskcal.autostart_enabled(), "끄면 지워짐")
+    app, d = fresh()
+    app.init_autostart()
+    check(deskcal.autostart_enabled() and json.load(open(deskcal.CONF_FILE))["autostart"] is True,
+          "처음 켜면 자동 실행이 켜짐")
+    app.set_autostart_pref(False)
+    app.init_autostart()
+    check(not deskcal.autostart_enabled(), "메뉴에서 끄면 다음에 켜도 다시 켜지지 않음")
+    app.destroy()
+    deskcal.FROZEN = True
+    check(deskcal.default_data_dir() == os.path.join(os.environ["LOCALAPPDATA"], "DeskCal"),
+          "exe 는 %LOCALAPPDATA%\\DeskCal 에 저장")
+    deskcal.FROZEN = False
+    check(deskcal.default_data_dir() == os.path.join(deskcal.HERE, "data"), "스크립트는 옆 data 폴더")
+else:
+    check("DeskCal" in deskcal.default_data_dir(), "macOS 데이터 폴더: %s" % deskcal.default_data_dir())
 
 # ------------------------------------------------------------------
 n_fail = RESULTS.count(False)
