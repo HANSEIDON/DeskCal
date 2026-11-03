@@ -184,7 +184,7 @@ _gdi_ready = False
 
 def _glass_init():
     global _gdi_ready, _gp
-    if _gdi_ready:
+    if _gdi_ready or not IS_WIN:
         return
     H = ctypes.c_void_p
     u, g, ms = ctypes.windll.user32, ctypes.windll.gdi32, ctypes.windll.msimg32
@@ -341,6 +341,8 @@ TRANSCODED = os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows",
 
 def desktop_dirs():
     """바탕화면 아이콘이 들어 있는 폴더 (내 바탕화면 · 공용 바탕화면)."""
+    if not IS_WIN:
+        return []
     out = []
     for csidl in (0x10, 0x19):            # CSIDL_DESKTOPDIRECTORY, CSIDL_COMMON_DESKTOPDIRECTORY
         buf = ctypes.create_unicode_buffer(520)
@@ -353,6 +355,8 @@ def wallpaper_sig():
     """바탕화면 모습이 바뀌었는지 알아보는 값. Windows 추천(Spotlight)·슬라이드쇼는 그림이
     바뀔 때 TranscodedWallpaper 를 새로 쓴다. 알려주는 경로는 늦게 바뀌기도 해서 둘 다 본다.
     바탕화면 폴더는 아이콘이 생기거나 지워지거나 이름이 바뀌면 변경 시각이 바뀐다."""
+    if not IS_WIN:                 # macOS 유리는 NSVisualEffectView 네이티브라 감지 불필요
+        return ()
     buf = ctypes.create_unicode_buffer(520)
     user32.SystemParametersInfoW(0x0073, 520, buf, 0)       # SPI_GETDESKWALLPAPER
     sig = [buf.value]
