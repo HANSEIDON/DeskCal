@@ -983,8 +983,9 @@ class DeskCal(tk.Tk):
                 except tk.TclError:
                     pass
                 break
-        self.overrideredirect(True)
-        self.configure(bg=BG)
+        if not IS_MAC:
+            self.overrideredirect(True)
+        self.configure(bg="systemTransparent" if (IS_MAC and self.glass) else BG)
         self.dpi = max(1.0, self.winfo_fpixels("1i") / 96.0)
         x = self.conf.get("x", self.winfo_screenwidth() - self.w() - 60)
         self.geometry("+%d+%d" % (x, self.conf.get("y", 60)))
@@ -1017,6 +1018,8 @@ class DeskCal(tk.Tk):
         # 한글 입력 상태에서는 <Control-c> 같은 문자 기반 바인딩이 안 걸린다.
         # 키코드로 직접 보면 입력기와 무관하게 동작한다.
         self.bind_class("Entry", "<Control-KeyPress>", self.on_ctrl_key)
+        if IS_MAC:
+            self.bind_class("Entry", "<Command-KeyPress>", self.on_ctrl_key)
         self.bind_all("<ButtonPress>", self.on_any_click, add="+")
         self.bind_all("<Escape>", lambda _: self.close_picker(), add="+")
         for ev in ("<Motion>", "<KeyPress>", "<ButtonPress>", "<MouseWheel>"):
@@ -1029,6 +1032,12 @@ class DeskCal(tk.Tk):
                       "glass15": self.after(15000, self.refresh_glass),
                       "glass60": self.after(60000, self.refresh_glass)}
         start_stall_watch(self)
+        if IS_MAC:
+            try:
+                import signal
+                signal.signal(signal.SIGUSR1, lambda *_: self.after(0, self.summon))
+            except Exception:
+                pass
         if not self.float_mode:
             self.init_autostart()
             if self.autostart:          # 로그온 때는 하던 일을 가로채지 않고 바탕화면에
@@ -1064,7 +1073,10 @@ class DeskCal(tk.Tk):
 
     def t(self, key, **kw):
         v = TEXT[self.lang].get(key, TEXT["en"].get(key, key))
-        return v.format(**kw) if kw and isinstance(v, str) else v
+        res = v.format(**kw) if kw and isinstance(v, str) else v
+        if IS_MAC and isinstance(res, str):
+            res = res.replace("Ctrl+", "⌘").replace("Ctrl +", "⌘").replace("Ctrl-", "⌘").replace("Ctrl ", "⌘ ")
+        return res
 
     def month_title(self, d):
         return self.t("month_title", y=d.year, m=d.month, month=MONTHS_EN[d.month - 1])
@@ -1077,18 +1089,23 @@ class DeskCal(tk.Tk):
 
     def on_ctrl_key(self, e):
         w = e.widget
-        kc = e.keycode                      # C=67 V=86 X=88 A=65
-        if kc not in (67, 86, 88, 65):
+        kc = e.keycode                      # Windows: C=67 V=86 X=88 A=65
+        key = (e.keysym or "").lower()
+        is_a = key == "a" or kc == 65
+        is_c = key == "c" or kc == 67
+        is_v = key == "v" or kc == 86
+        is_x = key == "x" or kc == 88
+        if not (is_a or is_c or is_v or is_x):
             return None
         try:
-            if kc == 65:                    # 전체 선택
+            if is_a:                    # 전체 선택
                 w.select_range(0, "end")
                 w.icursor("end")
-            elif kc in (67, 88):            # 복사 / 잘라내기
+            elif is_c or is_x:            # 복사 / 잘라내기
                 if w.selection_present():
                     self.clipboard_clear()
                     self.clipboard_append(w.selection_get())
-                    if kc == 88:
+                    if is_x:
                         w.delete("sel.first", "sel.last")
             else:                           # 붙여넣기
                 try:
@@ -1211,7 +1228,7 @@ class DeskCal(tk.Tk):
         self.theme = name
         self.conf["theme"] = name
         apply_theme(name)
-        self.configure(bg=BG)
+        self.configure(bg="systemTransparent" if (IS_MAC and self.glass) else BG)
         self.build()
         self.save_conf()
 
@@ -1279,6 +1296,22 @@ class DeskCal(tk.Tk):
         내려간다'였는데, 시작 메뉴가 닫히며 앞 창이 저절로 바뀌어 곧바로 숨었다)"""
         if self.view == "cal" and not self.busy():
             self.go_today()
+        if IS_MAC:
+            try:
+                import AppKit
+                AppKit.NSApp.activateIgnoringOtherApps_(True)
+                for win in (AppKit.NSApp.windows() or []):
+                    if win.title() == "DeskCal":
+                        win.makeKeyAndOrderFront_(None)
+                        break
+            except Exception:
+                pass
+            self.lift()
+            self.focus_force()
+            self._z, self._summon_t = "summoned", time.time()
+            if not quiet:
+                log("아이콘으로 불러냄 (macOS AppKit 활성화)")
+            return
         user32.ShowWindow(self.hwnd, SW_SHOWNOACTIVATE)
         if self._topmost:
             user32.SetWindowPos(self.hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_KEEP)
@@ -1344,8 +1377,11 @@ class DeskCal(tk.Tk):
             self._z, self._fg_start = "startup", fg
 
     def z_tick(self):
-        # GetForegroundWindow 와 클래스 이름 확인뿐이라 아주 싸다.
         self._alive = time.time()
+        if IS_MAC:
+            # macOS는 WindowServer가 네이티브로 창 순서를 관리하므로 60ms 폴링 대신 1초 주기로 완화
+            self._jobs["z"] = self.after(1000, self.z_tick)
+            return
         try:
             if self._summon_ev and kernel32.WaitForSingleObject(self._summon_ev, 0) == 0:
                 self.summon()
@@ -1376,7 +1412,20 @@ class DeskCal(tk.Tk):
                 r = mi.rcWork
                 return r.left, r.top, r.right, r.bottom
         if IS_MAC:
-            return 0, 25, self.winfo_screenwidth(), self.winfo_screenheight() - 70
+            try:
+                import AppKit
+                screen = AppKit.NSScreen.mainScreen()
+                if screen:
+                    vf = screen.visibleFrame()
+                    sf = screen.frame()
+                    l = int(vf.origin.x)
+                    w = int(vf.size.width)
+                    h = int(vf.size.height)
+                    t = int(sf.size.height - (vf.origin.y + vf.size.height))
+                    return l, t, l + w, t + h
+            except Exception:
+                pass
+            return 0, 30, self.winfo_screenwidth(), self.winfo_screenheight() - 60
         return 0, 0, self.winfo_screenwidth(), self.winfo_screenheight()
 
     def ensure_on_screen(self):
@@ -1506,6 +1555,10 @@ class DeskCal(tk.Tk):
         (드래그용 바탕화면 전체 유리는 조금 뒤에 따로 만든다: prepare_desk)"""
         self.layout()
         apply_theme(self.theme)
+        if IS_MAC:
+            # macOS는 순정 NSVisualEffectView로 실시간 블러 처리하므로 8회 지연 루프를 생략 (0초 처리)
+            self.glass_img = self._desk = None
+            return
         W, H = self.w(), self.h()
         alpha = GLASS.get(self.glass)
         if not alpha:
@@ -1562,7 +1615,7 @@ class DeskCal(tk.Tk):
         W, H = self.w(), self.h()
         self.geometry("%dx%d" % (W, H))
         self.make_background()
-        self.configure(bg=BG)
+        self.configure(bg="systemTransparent" if (IS_MAC and self.glass) else BG)
 
         # 창 전체가 캔버스 한 장이다. 위젯은 배경이 불투명해 유리 위에 올리면 네모난
         # 자국이 생기므로, 유리 위에 보이는 머리줄과 달력은 캔버스에 직접 그린다.
@@ -1586,15 +1639,21 @@ class DeskCal(tk.Tk):
         c.create_window(cx0, cy0, window=self.cal, anchor="nw")
         self.cal.bind("<Configure>", lambda _: self.draw())
         self.cal.bind("<Button-1>", self.on_click)
-        self.cal.bind("<Control-Button-1>", self.on_tt_ctrl_click)
+        if IS_MAC:
+            self.cal.bind("<Command-Button-1>", self.on_tt_ctrl_click)
+            self.cal.bind("<Control-Button-1>", self.menu)
+            c.bind("<Control-Button-1>", self.menu)
+        else:
+            self.cal.bind("<Control-Button-1>", self.on_tt_ctrl_click)
         self.cal.bind("<B1-Motion>", self.on_tt_drag)
         self.cal.bind("<ButtonRelease-1>", self.on_tt_release)
-        self.cal.bind("<Button-3>", self.menu)
+        for b in ("<Button-2>", "<Button-3>"):
+            self.cal.bind(b, self.menu)
+            c.bind(b, self.menu)
 
         c.bind("<ButtonPress-1>", self.drag_start)
         c.bind("<B1-Motion>", self.drag_move)
         c.bind("<ButtonRelease-1>", self.drag_end)
-        c.bind("<Button-3>", self.menu)
         self.draw_header()
         self.render()
         self.schedule_desk(1500)
@@ -3023,7 +3082,10 @@ class DeskCal(tk.Tk):
 
         dot = self.check_box(row, col, done, False, lambda i=idx: self.toggle_done(i))
         dot.pack(side="left", padx=(self.px(2), 0))
-        dot.bind("<Button-3>", lambda e, i=idx: self.color_menu(e, i))
+        for b in ("<Button-2>", "<Button-3>"):
+            dot.bind(b, lambda e, i=idx: self.color_menu(e, i))
+        if IS_MAC:
+            dot.bind("<Control-Button-1>", lambda e, i=idx: self.color_menu(e, i))
         self.tip(dot, self.t("tip_done"))
 
         x = tk.Label(row, text="×", bg=CARD, fg=DIM, font=self.f(15), cursor="hand2",
@@ -3390,7 +3452,16 @@ class DeskCal(tk.Tk):
     def init_autostart(self):
         """처음 켤 때는 '윈도우 시작 시 실행'을 켜 둔다. 메뉴에서 끈 뒤에는 다시 켜지 않는다."""
         if "autostart" not in self.conf:
-            self.set_autostart_pref(True)
+            if IS_MAC:
+                from platform_helper import is_app_translocated, get_mac_app_bundle_path
+                bundle = get_mac_app_bundle_path()
+                if bundle and bundle.startswith("/Applications") and not is_app_translocated():
+                    self.set_autostart_pref(True)
+                else:
+                    self.conf["autostart"] = False
+                    self.save_conf()
+            else:
+                self.set_autostart_pref(True)
 
     def set_autostart_pref(self, on):
         set_autostart(on)
@@ -3425,7 +3496,8 @@ class DeskCal(tk.Tk):
         top.withdraw()                                   # 왼쪽 위에 잠깐 떴다 옮겨지지 않게
         top.title("DeskCal")
         top.attributes("-topmost", True)
-        top.transient(self)
+        if not IS_MAC:
+            top.transient(self)
         top.resizable(False, False)
         return top
 
@@ -3479,11 +3551,24 @@ def already_running():
             import fcntl
             global _lock_file
             lock_path = os.path.join(APP_DIR, "deskcal.lock")
-            _lock_file = open(lock_path, "w")
+            _lock_file = open(lock_path, "a+")
+            _lock_file.seek(0)
             fcntl.flock(_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _lock_file.truncate(0)
+            _lock_file.write(str(os.getpid()) + "\n")
+            _lock_file.flush()
             return False
         except Exception:
-            log("이미 실행 중 (macOS lockfile)")
+            try:
+                import signal
+                lock_path = os.path.join(APP_DIR, "deskcal.lock")
+                with open(lock_path, "r") as f:
+                    old_pid = int(f.read().strip())
+                if old_pid > 0:
+                    os.kill(old_pid, signal.SIGUSR1)
+                    log("이미 실행 중 - 기존 프로세스(PID %d)에 소환 신호 전송" % old_pid)
+            except Exception as e:
+                log("이미 실행 중 (macOS lockfile): %s" % e)
             return True
     return False
 
