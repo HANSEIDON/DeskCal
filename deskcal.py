@@ -1088,9 +1088,11 @@ class DeskCal(tk.Tk):
     # ---------- 복사 · 붙여넣기 ----------
 
     def on_ctrl_key(self, e):
-        w = e.widget
-        kc = e.keycode                      # Windows: C=67 V=86 X=88 A=65
-        key = (e.keysym or "").lower()
+
+
+        w = getattr(e, "widget", getattr(e, "w", None))
+        kc = getattr(e, "keycode", getattr(e, "kc", 0))
+        key = (getattr(e, "keysym", None) or "").lower()
         is_a = key == "a" or kc == 65
         is_c = key == "c" or kc == 67
         is_v = key == "v" or kc == 86
