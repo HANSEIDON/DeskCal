@@ -644,7 +644,13 @@ if IS_WIN:
     kernel32 = ctypes.windll.kernel32
     dwmapi = ctypes.windll.dwmapi
 else:
-    user32 = kernel32 = dwmapi = None
+    class _NoWin:
+        """macOS: Windows 전용 호출이 실수로 불려도 터지지 않게 0 을 돌려준다.
+        창을 바탕화면에 붙이는 일은 setup_macos_window(NSWindow)가 대신한다.
+        0 은 falsy 라서 요약 이벤트·앞창 판정 같은 로직이 자연히 건너뛴다."""
+        def __getattr__(self, _name):
+            return lambda *a, **k: 0
+    user32 = kernel32 = dwmapi = _NoWin()
 
 
 class RECT(ctypes.Structure):
