@@ -662,39 +662,39 @@ class MONITORINFO(ctypes.Structure):
 _H = ctypes.c_void_p
 if IS_WIN:
     user32.GetForegroundWindow.restype = _H
-user32.GetParent.restype = _H
-user32.GetParent.argtypes = [_H]
-user32.FindWindowW.restype = _H
-user32.FindWindowExW.restype = _H
-user32.FindWindowExW.argtypes = [_H, _H, ctypes.c_wchar_p, ctypes.c_wchar_p]
-user32.IsIconic.argtypes = [_H]
-user32.GetWindow.restype = _H
-user32.GetWindow.argtypes = [_H, ctypes.c_uint]
-user32.GetClassNameW.argtypes = [_H, ctypes.c_wchar_p, ctypes.c_int]
-user32.GetWindowThreadProcessId.argtypes = [_H, ctypes.POINTER(ctypes.c_ulong)]
-user32.IsWindowVisible.argtypes = [_H]
-user32.GetWindowRect.argtypes = [_H, ctypes.POINTER(RECT)]
-user32.SystemParametersInfoW.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p,
-                                         ctypes.c_uint]
-user32.SetWindowPos.argtypes = [_H, _H, ctypes.c_int, ctypes.c_int,
-                                ctypes.c_int, ctypes.c_int, ctypes.c_uint]
-user32.ShowWindow.argtypes = [_H, ctypes.c_int]
-user32.MonitorFromWindow.restype = _H
-user32.MonitorFromWindow.argtypes = [_H, ctypes.c_uint]
-user32.GetMonitorInfoW.argtypes = [_H, ctypes.POINTER(MONITORINFO)]
-user32.GetWindowLongW.argtypes = [_H, ctypes.c_int]
-user32.SetWindowLongW.argtypes = [_H, ctypes.c_int, ctypes.c_long]
+    user32.GetParent.restype = _H
+    user32.GetParent.argtypes = [_H]
+    user32.FindWindowW.restype = _H
+    user32.FindWindowExW.restype = _H
+    user32.FindWindowExW.argtypes = [_H, _H, ctypes.c_wchar_p, ctypes.c_wchar_p]
+    user32.IsIconic.argtypes = [_H]
+    user32.GetWindow.restype = _H
+    user32.GetWindow.argtypes = [_H, ctypes.c_uint]
+    user32.GetClassNameW.argtypes = [_H, ctypes.c_wchar_p, ctypes.c_int]
+    user32.GetWindowThreadProcessId.argtypes = [_H, ctypes.POINTER(ctypes.c_ulong)]
+    user32.IsWindowVisible.argtypes = [_H]
+    user32.GetWindowRect.argtypes = [_H, ctypes.POINTER(RECT)]
+    user32.SystemParametersInfoW.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p,
+                                             ctypes.c_uint]
+    user32.SetWindowPos.argtypes = [_H, _H, ctypes.c_int, ctypes.c_int,
+                                    ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+    user32.ShowWindow.argtypes = [_H, ctypes.c_int]
+    user32.MonitorFromWindow.restype = _H
+    user32.MonitorFromWindow.argtypes = [_H, ctypes.c_uint]
+    user32.GetMonitorInfoW.argtypes = [_H, ctypes.POINTER(MONITORINFO)]
+    user32.GetWindowLongW.argtypes = [_H, ctypes.c_int]
+    user32.SetWindowLongW.argtypes = [_H, ctypes.c_int, ctypes.c_long]
 
-kernel32.CreateEventW.restype = _H
-kernel32.CreateEventW.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_bool, ctypes.c_wchar_p]
-kernel32.OpenEventW.restype = _H
-kernel32.OpenEventW.argtypes = [ctypes.c_uint, ctypes.c_bool, ctypes.c_wchar_p]
-kernel32.SetEvent.argtypes = [_H]
-kernel32.WaitForSingleObject.argtypes = [_H, ctypes.c_uint]
-kernel32.WaitForSingleObject.restype = ctypes.c_uint
-kernel32.CloseHandle.argtypes = [_H]
-user32.SetForegroundWindow.argtypes = [_H]
-user32.AllowSetForegroundWindow.argtypes = [ctypes.c_uint]
+    kernel32.CreateEventW.restype = _H
+    kernel32.CreateEventW.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_bool, ctypes.c_wchar_p]
+    kernel32.OpenEventW.restype = _H
+    kernel32.OpenEventW.argtypes = [ctypes.c_uint, ctypes.c_bool, ctypes.c_wchar_p]
+    kernel32.SetEvent.argtypes = [_H]
+    kernel32.WaitForSingleObject.argtypes = [_H, ctypes.c_uint]
+    kernel32.WaitForSingleObject.restype = ctypes.c_uint
+    kernel32.CloseHandle.argtypes = [_H]
+    user32.SetForegroundWindow.argtypes = [_H]
+    user32.AllowSetForegroundWindow.argtypes = [ctypes.c_uint]
 SUMMON_EVENT = "DeskCal_summon"      # 아이콘을 다시 누르면 켜져 있는 위젯에 보내는 신호
 
 WIN_TITLE = "DeskCal"
