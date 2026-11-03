@@ -616,40 +616,43 @@ check(app.today == dt.date.today() and app.selected == dt.date.today(),
 app.destroy()
 
 app, d = fresh(conf={"glass": "soft"})
-if app.glass_img:
-    check(app.glass_img.width() == app.w() and app.glass_img.height() == app.h(),
-          "유리 배경이 창 크기와 같음 (%dx%d)" % (app.glass_img.width(), app.glass_img.height()))
-else:
-    check(False, "유리 배경을 만들지 못함 (바탕화면 캡처 실패)")
-app._desk = None                        # 드래그용 바탕화면 유리를 만드는 중에
-app.prepare_desk()
-app.update()
-app.set_view("tt")                       # 화면을 다시 그려도
-end = time.time() + 4
-while time.time() < end and not app.desk_ready():
+if deskcal.IS_WIN:
+    if app.glass_img:
+        check(app.glass_img.width() == app.w() and app.glass_img.height() == app.h(),
+              "유리 배경이 창 크기와 같음 (%dx%d)" % (app.glass_img.width(), app.glass_img.height()))
+    else:
+        check(False, "유리 배경을 만들지 못함 (바탕화면 캡처 실패)")
+    app._desk = None                        # 드래그용 바탕화면 유리를 만드는 중에
+    app.prepare_desk()
     app.update()
-    time.sleep(0.02)
-check(app.desk_ready() and not app._desk_busy,
-      "유리를 만드는 중에 화면을 다시 그려도 드래그용 유리가 만들어짐 (예전엔 영영 멈춤)")
-app.set_view("cal")
-real_sig = deskcal.wallpaper_sig
-deskcal.wallpaper_sig = lambda: ("새 바탕화면",)        # Windows 추천이 그림을 바꿨다
-old_img = app.glass_img
-app.wall_tick()
-check(not app.desk_ready(), "바탕화면이 바뀌면 드래그용 사진을 바로 버림")
-check(app.glass_img is old_img, "바뀌는 애니메이션 동안(2초)은 아직 다시 만들지 않음")
-app._wall_changed = time.time() - 3
-app.wall_tick()
-check(app.glass_img is not old_img and app._wall_changed is None, "2초 뒤 유리를 새 그림으로 다시 만듦")
-deskcal.wallpaper_sig = real_sig
-real_dirs = deskcal.desktop_dirs
-fake_desk = tempfile.mkdtemp(prefix="deskcal_desktop_")
-deskcal.desktop_dirs = lambda: [fake_desk]
-before = deskcal.wallpaper_sig()
-time.sleep(0.05)
-open(os.path.join(fake_desk, "새 폴더.txt"), "w").close()
-check(deskcal.wallpaper_sig() != before, "바탕화면에 파일·폴더가 생기면 바뀐 것으로 알아챔")
-deskcal.desktop_dirs = real_dirs
+    app.set_view("tt")                       # 화면을 다시 그려도
+    end = time.time() + 4
+    while time.time() < end and not app.desk_ready():
+        app.update()
+        time.sleep(0.02)
+    check(app.desk_ready() and not app._desk_busy,
+          "유리를 만드는 중에 화면을 다시 그려도 드래그용 유리가 만들어짐 (예전엔 영영 멈춤)")
+    app.set_view("cal")
+    real_sig = deskcal.wallpaper_sig
+    deskcal.wallpaper_sig = lambda: ("새 바탕화면",)        # Windows 추천이 그림을 바꿨다
+    old_img = app.glass_img
+    app.wall_tick()
+    check(not app.desk_ready(), "바탕화면이 바뀌면 드래그용 사진을 바로 버림")
+    check(app.glass_img is old_img, "바뀌는 애니메이션 동안(2초)은 아직 다시 만들지 않음")
+    app._wall_changed = time.time() - 3
+    app.wall_tick()
+    check(app.glass_img is not old_img and app._wall_changed is None, "2초 뒤 유리를 새 그림으로 다시 만듦")
+    deskcal.wallpaper_sig = real_sig
+    real_dirs = deskcal.desktop_dirs
+    fake_desk = tempfile.mkdtemp(prefix="deskcal_desktop_")
+    deskcal.desktop_dirs = lambda: [fake_desk]
+    before = deskcal.wallpaper_sig()
+    time.sleep(0.05)
+    open(os.path.join(fake_desk, "새 폴더.txt"), "w").close()
+    check(deskcal.wallpaper_sig() != before, "바탕화면에 파일·폴더가 생기면 바뀐 것으로 알아챔")
+    deskcal.desktop_dirs = real_dirs
+else:
+    check(app.glass_img is None, "macOS 는 네이티브 블러(NSVisualEffectView)라 Tk 유리 이미지는 없음")
 app.set_glass("off")
 check(app.glass_img is None and json.load(open(deskcal.CONF_FILE))["glass"] == "off",
       "'단색'으로 바꾸면 유리 없이 저장됨")
