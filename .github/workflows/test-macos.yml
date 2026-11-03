@@ -110,9 +110,10 @@ jobs:
         if: always()
         run: |
           mkdir -p statusdir && echo ok > statusdir/status.txt
-          ERR=$(grep -ihE 'Error|Exception|assert|Traceback|No module' artifacts/unit_tests.log artifacts/app.log 2>/dev/null | tail -1 | tr -cs 'A-Za-z0-9._ -' '-' | cut -c1-90)
+          # 실패 핵심을 base64url 로 인코딩해 아티팩트 이름에 담는다 (무인증 API 로 디코딩 가능)
+          PAYLOAD=$( { echo "== UNIT FAIL =="; grep -iE '^FAIL|Error|Exception|Traceback' artifacts/unit_tests.log 2>/dev/null | head -4; echo "== APP TAIL =="; tail -6 artifacts/app.log 2>/dev/null; echo "== CRASH =="; tail -6 artifacts/crash.log 2>/dev/null; } | head -c 260 | base64 | tr '+/' '-_' | tr -d '=\n' )
           echo "STATUS=import-${{ steps.importcheck.outcome }}__unit-${{ steps.tests.outcome }}__native-${{ steps.mactests.outcome }}__alive-${{ steps.smoke.outputs.alive }}" >> "$GITHUB_ENV"
-          echo "ERRNAME=$ERR" >> "$GITHUB_ENV"
+          echo "B64=$PAYLOAD" >> "$GITHUB_ENV"
 
       - name: Upload status marker
         if: always()
@@ -121,11 +122,11 @@ jobs:
           name: RESULT__${{ env.STATUS }}
           path: statusdir/
 
-      - name: Upload error marker
+      - name: Upload error marker (base64)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ERR__${{ env.ERRNAME }}
+          name: B64__${{ env.B64 }}
           path: statusdir/
 
       - name: Upload artifacts (screenshots + logs)
