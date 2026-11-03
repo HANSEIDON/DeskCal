@@ -60,6 +60,24 @@ def setup_dpi():
 
 LAUNCH_AGENT_LABEL = "com.hanseidon.deskcal"
 
+def is_app_translocated():
+    """macOS App Translocation(임시 격리 실행) 여부 확인."""
+    if not IS_MAC:
+        return False
+    path = sys.executable or ""
+    return "AppTranslocation" in path or "/private/var/folders/" in path
+
+
+def get_mac_app_bundle_path():
+    """macOS .app 번들 최상위 경로 반환 (예: /Applications/DeskCal.app)."""
+    if not IS_MAC:
+        return None
+    p = os.path.abspath(sys.executable)
+    if ".app/Contents/MacOS" in p:
+        return p[:p.find(".app") + 4]
+    return None
+
+
 def get_launch_command(frozen=False):
     """실행 파일 또는 파이썬 스크립트 실행 경로 반환."""
     if frozen:
@@ -112,16 +130,29 @@ def set_autostart(on, frozen=False, log_func=None):
                     except FileNotFoundError:
                         pass
             _log("윈도우 시작 시 실행: %s" % ("켬" if on else "끔"))
+            return True
         except OSError:
             _log("윈도우 시작 시 실행 설정 실패:\n" + traceback.format_exc())
+            return False
 
     elif IS_MAC:
         launch_dir = os.path.expanduser("~/Library/LaunchAgents")
         plist_path = os.path.join(launch_dir, f"{LAUNCH_AGENT_LABEL}.plist")
         try:
             if on:
+                if is_app_translocated():
+                    # App Translocation 격리 경로인 경우: /Applications 에 정식 복사본이 있는지 확인
+                    std_app = "/Applications/DeskCal.app"
+                    std_bin = os.path.join(std_app, "Contents", "MacOS", "DeskCal")
+                    if os.path.exists(std_bin):
+                        args = [std_bin, "--autostart"]
+                    else:
+                        _log("macOS 자동 실행 실패: 앱이 /Applications 폴더로 이동되지 않아 임시 격리 경로입니다. /Applications 로 이동 후 켜주세요.")
+                        return False
+                else:
+                    args = get_launch_command(frozen)
+
                 os.makedirs(launch_dir, exist_ok=True)
-                args = get_launch_command(frozen)
                 plist_data = {
                     "Label": LAUNCH_AGENT_LABEL,
                     "ProgramArguments": args,
@@ -132,12 +163,15 @@ def set_autostart(on, frozen=False, log_func=None):
                 with open(plist_path, "wb") as f:
                     plistlib.dump(plist_data, f)
                 _log("macOS 로그인 시 실행 등록 완료 (LaunchAgent)")
+                return True
             else:
                 if os.path.exists(plist_path):
                     os.remove(plist_path)
                 _log("macOS 로그인 시 실행 등록 해제")
+                return True
         except Exception:
             _log("macOS 자동 실행 설정 실패:\n" + traceback.format_exc())
+            return False
 
 
 # ---------- 4. 네이티브 폰트 우선순위 ----------
@@ -174,42 +208,53 @@ def setup_macos_window(tk_root, is_dark=True):
         return False
     try:
         import AppKit
-        import objc
-        from ctypes import c_void_p
 
-        # Tk 의 winfo_id() 는 macOS 빌드에 따라 NSView* 가 아니다. 그대로 포인터로
-        # 캐스팅해 메시지를 보내면 세그폴트가 난다(try/except 로도 못 막음). 그래서
-        # 실제 NSWindow 객체들을 제목으로 안전하게 찾는다.
         ns_window = None
         app = AppKit.NSApplication.sharedApplication()
         for win in (app.windows() or []):
             try:
-                if win.title() == "DeskCal":
+                if win.title() == "DeskCal" or len(app.windows()) == 1:
                     ns_window = win
                     break
             except Exception:
                 continue
 
         if not ns_window:
-            return False   # 못 찾으면 일반 창으로 뜬다 (바탕화면 고정·블러만 생략)
+            return False
 
-        # 1. 데스크톱 레벨로 창 고정 (kCGDesktopWindowLevel = kCGNormalWindowLevel - 1)
-        # 미션 컨트롤이나 '데스크탑 보기'를 해도 항상 바탕화면 위에 유지됨
-        ns_window.setLevel_(AppKit.kCGDesktopWindowLevel)
+        # 1. 윈도우 스타일: overrideredirect(True) 대신 Titled + FullSizeContentView 사용
+        #    이렇게 해야 Cocoa가 키보드 포커스(canBecomeKeyWindow)를 정상 허용함
+        ns_window.setStyleMask_(
+            AppKit.NSWindowStyleMaskTitled |
+            AppKit.NSWindowStyleMaskFullSizeContentView
+        )
+        ns_window.setTitlebarAppearsTransparent_(True)
+        ns_window.setTitleVisibility_(AppKit.NSWindowTitleHidden)
+        for btn_type in (AppKit.NSWindowCloseButton, AppKit.NSWindowMiniaturizeButton, AppKit.NSWindowZoomButton):
+            btn = ns_window.standardWindowButton_(btn_type)
+            if btn:
+                btn.setHidden_(True)
 
-        # 2. 모든 Spaces(가상 데스크톱)에 상시 표시 + 미션컨트롤 사이클 제외
+        # 2. 데스크톱 레벨로 창 고정 (Finder 바탕화면 아이콘 바로 위 레이어)
+        # kCGDesktopIconWindowLevel + 1을 사용하여 Finder 아이콘이 클릭을 가로채지 못하게 함
+        try:
+            desktop_level = AppKit.CGWindowLevelForKey(AppKit.kCGDesktopIconWindowLevelKey)
+        except Exception:
+            desktop_level = getattr(AppKit, "kCGDesktopIconWindowLevel", 2147483603)
+        ns_window.setLevel_(desktop_level + 1)
+
+        # 3. 모든 Spaces(가상 데스크톱)에 상시 표시 + 미션컨트롤 사이클 제외
         ns_window.setCollectionBehavior_(
             AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces |
             AppKit.NSWindowCollectionBehaviorStationary |
             AppKit.NSWindowCollectionBehaviorIgnoresCycle
         )
 
-        # 3. 투명 타이틀바 및 투명 배경 처리
-        ns_window.setTitlebarAppearsTransparent_(True)
+        # 4. 투명 배경 처리
         ns_window.setOpaque_(False)
         ns_window.setBackgroundColor_(AppKit.NSColor.clearColor())
 
-        # 4. 순정 NSVisualEffectView (Frosted Glass / Vibrancy) 주입
+        # 5. 순정 NSVisualEffectView (Frosted Glass / Vibrancy) 주입
         content_view = ns_window.contentView()
         bounds = content_view.bounds()
 
