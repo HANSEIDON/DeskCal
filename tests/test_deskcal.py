@@ -211,77 +211,80 @@ check(app.title_text() == "2026年10月", "중국어 제목: %r" % app.title_tex
 labels = [w.cget("text") for w in walk(app, []) if w.winfo_class() == "Label"]
 check("添加" in labels and "日历" in head_texts(app) and "今天" in head_texts(app),
       "중국어 버튼/탭: %s" % head_texts(app))
-check(deskcal.FONT == "Noto Sans CJK SC", "중국어도 같은 글꼴: %s" % deskcal.FONT)
-app.set_view("tt")
-app.update()
-check(app.title_text().startswith("课表") and app.t("tt_cell", wd="周一", p=3) == "周一 第3节",
-      "중국어 시간표: %r" % app.title_text())
-app.set_view("cal")
-keep = deskcal.FONT_PREFS["zh"][0]
-deskcal.FONT_PREFS["zh"][0] = "없는 글꼴"
-check(deskcal.pick_font(app, "zh").startswith("Microsoft YaHei"),
-      "fonts 폴더가 없으면 중국어는 YaHei 로 (맑은 고딕은 간체자가 없음)")
-deskcal.FONT_PREFS["zh"][0] = keep
-app.destroy()
-app, d = fresh()
-app.shown = dt.date(2026, 10, 1)
-app.set_lang("en")
-app.update()
-check(app.title_text() == "October 2026", "영어 제목: %r" % app.title_text())
-labels = [w.cget("text") for w in walk(app, []) if w.winfo_class() == "Label"]
-check("Add" in labels and "Calendar" in head_texts(app) and "Today" in head_texts(app),
-      "영어 버튼/탭: %s" % head_texts(app))
-check(json.load(open(deskcal.CONF_FILE))["lang"] == "en", "언어 설정이 저장됨")
-app.set_view("tt")
-app.update()
-check(app.title_text().startswith("Timetable"), "시간표 제목도 영어")
-app.set_view("cal")
-app.set_lang("ko")
-app.update()
-check(app.title_text() == "2026년 10월", "한국어로 되돌림")
+if deskcal.IS_WIN:
+    check(deskcal.FONT == "Noto Sans CJK SC", "중국어도 같은 글꼴: %s" % deskcal.FONT)
+    app.set_view("tt")
+    app.update()
+    check(app.title_text().startswith("课表") and app.t("tt_cell", wd="周一", p=3) == "周一 第3节",
+          "중국어 시간표: %r" % app.title_text())
+    app.set_view("cal")
+    keep = deskcal.FONT_PREFS["zh"][0]
+    deskcal.FONT_PREFS["zh"][0] = "없는 글꼴"
+    check(deskcal.pick_font(app, "zh").startswith("Microsoft YaHei"),
+          "fonts 폴더가 없으면 중국어는 YaHei 로 (맑은 고딕은 간체자가 없음)")
+    deskcal.FONT_PREFS["zh"][0] = keep
+    app.destroy()
+    app, d = fresh()
+    app.shown = dt.date(2026, 10, 1)
+    app.set_lang("en")
+    app.update()
+    check(app.title_text() == "October 2026", "영어 제목: %r" % app.title_text())
+    labels = [w.cget("text") for w in walk(app, []) if w.winfo_class() == "Label"]
+    check("Add" in labels and "Calendar" in head_texts(app) and "Today" in head_texts(app),
+          "영어 버튼/탭: %s" % head_texts(app))
+    check(json.load(open(deskcal.CONF_FILE))["lang"] == "en", "언어 설정이 저장됨")
+    app.set_view("tt")
+    app.update()
+    check(app.title_text().startswith("Timetable"), "시간표 제목도 영어")
+    app.set_view("cal")
+    app.set_lang("ko")
+    app.update()
+    check(app.title_text() == "2026년 10월", "한국어로 되돌림")
 
-for theme in ("dark", "light"):
-    for glass in ("soft", "clear", "off"):
-        app.glass = glass
-        app.set_theme(theme)
-        app.update()
-        cr_fg = contrast(deskcal.FG, deskcal.CARD)
-        cr_mu = contrast(deskcal.MUTED, deskcal.CARD)
-        cr_bg = contrast(deskcal.FG, deskcal.BG)
-        check(cr_fg >= 7 and cr_mu >= 4.5 and cr_bg >= 7,
-              "%s/%s 글자 대비: 본문 %.1f · 흐린 글자 %.1f · 유리 위 %.1f (기준 7 · 4.5 · 7)"
-              % (theme, glass, cr_fg, cr_mu, cr_bg))
-check(app.theme == "light" and app.panel.cget("bg") == deskcal.CARD
-      and lum(deskcal.CARD) > 0.6, "라이트 모드: 밝은 패널 %s" % deskcal.CARD)
-check(json.load(open(deskcal.CONF_FILE))["theme"] == "light", "테마 설정이 저장됨")
-app.destroy()
-app, d2 = fresh(conf={"theme": "light", "lang": "en"})
-check(app.theme == "light" and lum(deskcal.CARD) > 0.6 and app.lang == "en",
-      "다시 켜도 라이트 모드·영어 유지")
-app.set_theme("dark")
-check(lum(deskcal.CARD) < 0.15, "다크 모드로 되돌림 (어두운 패널 %s)" % deskcal.CARD)
-app.destroy()
+    for theme in ("dark", "light"):
+        for glass in ("soft", "clear", "off"):
+            app.glass = glass
+            app.set_theme(theme)
+            app.update()
+            cr_fg = contrast(deskcal.FG, deskcal.CARD)
+            cr_mu = contrast(deskcal.MUTED, deskcal.CARD)
+            cr_bg = contrast(deskcal.FG, deskcal.BG)
+            check(cr_fg >= 7 and cr_mu >= 4.5 and cr_bg >= 7,
+                  "%s/%s 글자 대비: 본문 %.1f · 흐린 글자 %.1f · 유리 위 %.1f (기준 7 · 4.5 · 7)"
+                  % (theme, glass, cr_fg, cr_mu, cr_bg))
+    check(app.theme == "light" and app.panel.cget("bg") == deskcal.CARD
+          and lum(deskcal.CARD) > 0.6, "라이트 모드: 밝은 패널 %s" % deskcal.CARD)
+    check(json.load(open(deskcal.CONF_FILE))["theme"] == "light", "테마 설정이 저장됨")
+    app.destroy()
+    app, d2 = fresh(conf={"theme": "light", "lang": "en"})
+    check(app.theme == "light" and lum(deskcal.CARD) > 0.6 and app.lang == "en",
+          "다시 켜도 라이트 모드·영어 유지")
+    app.set_theme("dark")
+    check(lum(deskcal.CARD) < 0.15, "다크 모드로 되돌림 (어두운 패널 %s)" % deskcal.CARD)
+    app.destroy()
 
-# ------------------------------------------------------------------
-section("글꼴")
-app, d = fresh()
-check(deskcal.FONT == "Noto Sans CJK SC", "Noto Sans CJK SC 사용: %s" % deskcal.FONT)
-gdi = ctypes.windll.gdi32
-gdi.CreateFontW.restype = ctypes.c_void_p
-gdi.CreateFontW.argtypes = [ctypes.c_int] * 5 + [ctypes.c_uint] * 8 + [ctypes.c_wchar_p]
-gdi.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-gdi.CreateCompatibleDC.restype = ctypes.c_void_p
-gdi.GetGlyphIndicesW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int,
-                                 ctypes.c_void_p, ctypes.c_uint]
-dc = gdi.CreateCompatibleDC(None)
-gdi.SelectObject(dc, gdi.CreateFontW(-20, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, deskcal.FONT))
-ui = "".join(sorted({ch for lang in deskcal.TEXT.values() for v in lang.values()
-                     for ch in ("".join(v) if isinstance(v, list) else v)}))
-ui += "网络传播数据治理面向对象程序设计世界社会主义概论匹克球×›‹·…"
-buf = (ctypes.c_ushort * len(ui))()
-gdi.GetGlyphIndicesW(dc, ui, len(ui), buf, 1)
-miss = "".join(c for c, g in zip(ui, buf) if g == 0xFFFF and not c.isspace() and c != "\n")
-check(not miss, "모든 화면 글자 + 중국어 과목명이 한 글꼴에 있음 (없는 글자: %r)" % miss)
+    # ------------------------------------------------------------------
+    section("글꼴")
+    app, d = fresh()
+    check(deskcal.FONT == "Noto Sans CJK SC", "Noto Sans CJK SC 사용: %s" % deskcal.FONT)
+    gdi = ctypes.windll.gdi32
+    gdi.CreateFontW.restype = ctypes.c_void_p
+    gdi.CreateFontW.argtypes = [ctypes.c_int] * 5 + [ctypes.c_uint] * 8 + [ctypes.c_wchar_p]
+    gdi.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    gdi.CreateCompatibleDC.restype = ctypes.c_void_p
+    gdi.GetGlyphIndicesW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int,
+                                     ctypes.c_void_p, ctypes.c_uint]
+    dc = gdi.CreateCompatibleDC(None)
+    gdi.SelectObject(dc, gdi.CreateFontW(-20, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, deskcal.FONT))
+    ui = "".join(sorted({ch for lang in deskcal.TEXT.values() for v in lang.values()
+                         for ch in ("".join(v) if isinstance(v, list) else v)}))
+    ui += "网络传播数据治理面向对象程序设计世界社会主义概论匹克球×›‹·…"
+    buf = (ctypes.c_ushort * len(ui))()
+    gdi.GetGlyphIndicesW(dc, ui, len(ui), buf, 1)
+    miss = "".join(c for c, g in zip(ui, buf) if g == 0xFFFF and not c.isspace() and c != "\n")
+    check(not miss, "모든 화면 글자 + 중국어 과목명이 한 글꼴에 있음 (없는 글자: %r)" % miss)
+else:
+    check(bool(deskcal.FONT), "글꼴이 설정됨: %s" % deskcal.FONT)
 app.destroy()
 
 # ------------------------------------------------------------------
@@ -916,53 +919,54 @@ check("Shell_TrayWnd" in deskcal.DESK_SHELL_CLASSES, "작업표시줄(Shell_Tray
 check("Progman" in deskcal.DESK_SURFACE_CLASSES and "WorkerW" in deskcal.DESK_SURFACE_CLASSES,
       "바탕화면 서피스 클래스(Progman, WorkerW) 정의됨")
 
-app, d = fresh(conf={"pinned": True})
-app.pinned = True
-app.hwnd = 12345
-app._z = "showdesk"
-app._topmost = True
+if deskcal.IS_WIN:
+    app, d = fresh(conf={"pinned": True})
+    app.pinned = True
+    app.hwnd = 12345
+    app._z = "showdesk"
+    app._topmost = True
 
-orig_GetForegroundWindow = deskcal.user32.GetForegroundWindow
-orig_win_class = deskcal.win_class
-orig_IsWindowVisible = deskcal.user32.IsWindowVisible
-orig_is_cloaked = deskcal.is_cloaked
-orig_SetWindowPos = deskcal.user32.SetWindowPos
+    orig_GetForegroundWindow = deskcal.user32.GetForegroundWindow
+    orig_win_class = deskcal.win_class
+    orig_IsWindowVisible = deskcal.user32.IsWindowVisible
+    orig_is_cloaked = deskcal.is_cloaked
+    orig_SetWindowPos = deskcal.user32.SetWindowPos
 
-deskcal.user32.SetWindowPos = lambda *args: 1
-deskcal.user32.GetForegroundWindow = lambda: 99999
-deskcal.win_class = lambda h: "Shell_TrayWnd"
-app.sync_z()
-check(app._z == "showdesk", "작업표시줄(Shell_TrayWnd) 포커스 시 바탕화면 보기(showdesk) 유지")
+    deskcal.user32.SetWindowPos = lambda *args: 1
+    deskcal.user32.GetForegroundWindow = lambda: 99999
+    deskcal.win_class = lambda h: "Shell_TrayWnd"
+    app.sync_z()
+    check(app._z == "showdesk", "작업표시줄(Shell_TrayWnd) 포커스 시 바탕화면 보기(showdesk) 유지")
 
-deskcal.win_class = lambda h: "WorkerW"
-app.sync_z()
-check(app._z == "showdesk", "바탕화면(WorkerW) 포커스 시 showdesk 유지")
+    deskcal.win_class = lambda h: "WorkerW"
+    app.sync_z()
+    check(app._z == "showdesk", "바탕화면(WorkerW) 포커스 시 showdesk 유지")
 
-deskcal.win_class = lambda h: "TkTopLevel"
-app.owns = lambda h: True
-app.sync_z()
-check(app._z == "showdesk", "위젯 조작 중 showdesk 유지")
+    deskcal.win_class = lambda h: "TkTopLevel"
+    app.owns = lambda h: True
+    app.sync_z()
+    check(app._z == "showdesk", "위젯 조작 중 showdesk 유지")
 
-app.owns = lambda h: False
-deskcal.win_class = lambda h: "Chrome_WidgetWin_1"
-deskcal.user32.IsWindowVisible = lambda h: 1
-deskcal.is_cloaked = lambda h: False
-app.sync_z()
-check(app._z == "bottom" and not app._topmost, "일반 앱 복귀 시 바탕화면 보기 종료 후 bottom 복원")
+    app.owns = lambda h: False
+    deskcal.win_class = lambda h: "Chrome_WidgetWin_1"
+    deskcal.user32.IsWindowVisible = lambda h: 1
+    deskcal.is_cloaked = lambda h: False
+    app.sync_z()
+    check(app._z == "bottom" and not app._topmost, "일반 앱 복귀 시 바탕화면 보기 종료 후 bottom 복원")
 
-app._z = "bottom"
-app.is_covered_by_desktop = lambda: 88888
-app.is_below = lambda h: True
-deskcal.win_class = lambda h: "Shell_TrayWnd"
-app.sync_z()
-check(app._z == "showdesk" and app._topmost, "작업표시줄 클릭으로 바탕화면이 덮었을 때 자동 감지하여 맨 위로 올림")
+    app._z = "bottom"
+    app.is_covered_by_desktop = lambda: 88888
+    app.is_below = lambda h: True
+    deskcal.win_class = lambda h: "Shell_TrayWnd"
+    app.sync_z()
+    check(app._z == "showdesk" and app._topmost, "작업표시줄 클릭으로 바탕화면이 덮었을 때 자동 감지하여 맨 위로 올림")
 
-deskcal.user32.GetForegroundWindow = orig_GetForegroundWindow
-deskcal.win_class = orig_win_class
-deskcal.user32.IsWindowVisible = orig_IsWindowVisible
-deskcal.is_cloaked = orig_is_cloaked
-deskcal.user32.SetWindowPos = orig_SetWindowPos
-app.destroy()
+    deskcal.user32.GetForegroundWindow = orig_GetForegroundWindow
+    deskcal.win_class = orig_win_class
+    deskcal.user32.IsWindowVisible = orig_IsWindowVisible
+    deskcal.is_cloaked = orig_is_cloaked
+    deskcal.user32.SetWindowPos = orig_SetWindowPos
+    app.destroy()
 
 # ------------------------------------------------------------------
 section("주말 시간표 토글 (5일 / 7일)")
