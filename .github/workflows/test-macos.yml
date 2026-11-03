@@ -111,9 +111,11 @@ jobs:
         run: |
           mkdir -p statusdir && echo ok > statusdir/status.txt
           # 실패 핵심을 base64url 로 인코딩해 아티팩트 이름에 담는다 (무인증 API 로 디코딩 가능)
-          PAYLOAD=$( { grep -iE '^FAIL|Error|Exception|Traceback' artifacts/unit_tests.log 2>/dev/null | head -2; echo "|APP|"; tail -3 artifacts/app.log 2>/dev/null; } | head -c 150 | base64 | tr '+/' '-_' | tr -d '=\n' )
+          PAYLOAD=$( tail -c 170 artifacts/unit_tests.log 2>/dev/null | base64 | tr '+/' '-_' | tr -d '=\n' )
+          PAYLOAD2=$( tail -c 60 artifacts/app.log 2>/dev/null | base64 | tr '+/' '-_' | tr -d '=\n' )
           echo "STATUS=import-${{ steps.importcheck.outcome }}__unit-${{ steps.tests.outcome }}__native-${{ steps.mactests.outcome }}__alive-${{ steps.smoke.outputs.alive }}" >> "$GITHUB_ENV"
           echo "B64=$PAYLOAD" >> "$GITHUB_ENV"
+          echo "B64APP=$PAYLOAD2" >> "$GITHUB_ENV"
 
       - name: Upload status marker
         if: always()
@@ -128,6 +130,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: B64__${{ env.B64 }}
+          path: statusdir/
+
+      - name: Upload app-log marker (base64)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: APP__${{ env.B64APP }}
           path: statusdir/
 
       - name: Upload artifacts (screenshots + logs)
