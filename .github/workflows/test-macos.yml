@@ -28,19 +28,56 @@ jobs:
           python -m pip install --upgrade pip
           pip install pillow pyobjc-framework-Cocoa pyobjc-framework-Quartz
 
+      - name: Import check (does deskcal import on macOS?)
+        id: importcheck
+        continue-on-error: true
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          set -o pipefail
+          python -c "import deskcal; print('IMPORT OK')" 2>&1 | tee import.log
+          {
+            echo "### Import check"
+            echo '```'
+            cat import.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Unit tests (cross-platform suite)
         id: tests
         continue-on-error: true
         env:
           PYTHONIOENCODING: utf-8
-        run: python tests/test_deskcal.py
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          python tests/test_deskcal.py 2>&1 | tee artifacts/unit_tests.log
+          rc=${PIPESTATUS[0]}
+          {
+            echo "### Unit tests (exit $rc)"
+            echo '```'
+            tail -n 40 artifacts/unit_tests.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
 
       - name: macOS native tests
         id: mactests
         continue-on-error: true
         env:
           PYTHONIOENCODING: utf-8
-        run: python tests/test_macos_native.py
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          python tests/test_macos_native.py 2>&1 | tee artifacts/native_tests.log
+          rc=${PIPESTATUS[0]}
+          {
+            echo "### macOS native tests (exit $rc)"
+            echo '```'
+            tail -n 30 artifacts/native_tests.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
 
       - name: Launch smoke test + screenshots
         id: smoke
@@ -68,6 +105,28 @@ jobs:
           # 크래시 로그 수집
           cp -f "$DESKCAL_DIR/crash.log" artifacts/ 2>/dev/null || true
           cp -f "$DESKCAL_DIR/error.log" artifacts/ 2>/dev/null || true
+
+      - name: Encode result into an artifact name (readable via public API)
+        if: always()
+        run: |
+          mkdir -p statusdir && echo ok > statusdir/status.txt
+          ERR=$(grep -ihE 'Error|Exception|assert|Traceback|No module' artifacts/unit_tests.log artifacts/app.log 2>/dev/null | tail -1 | tr -cs 'A-Za-z0-9._ -' '-' | cut -c1-90)
+          echo "STATUS=import-${{ steps.importcheck.outcome }}__unit-${{ steps.tests.outcome }}__native-${{ steps.mactests.outcome }}__alive-${{ steps.smoke.outputs.alive }}" >> "$GITHUB_ENV"
+          echo "ERRNAME=$ERR" >> "$GITHUB_ENV"
+
+      - name: Upload status marker
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RESULT__${{ env.STATUS }}
+          path: statusdir/
+
+      - name: Upload error marker
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ERR__${{ env.ERRNAME }}
+          path: statusdir/
 
       - name: Upload artifacts (screenshots + logs)
         if: always()
