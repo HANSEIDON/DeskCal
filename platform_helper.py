@@ -177,21 +177,21 @@ def setup_macos_window(tk_root, is_dark=True):
         import objc
         from ctypes import c_void_p
 
-        # Tkinter 창의 Cocoa NSWindow 인스턴스 획득
-        # winfo_id()는 X11 ID 또는 NSView 포인터를 반환한다
-        view_ptr = tk_root.winfo_id()
-        ns_view = objc.objc_object(c_void_p=view_ptr)
-        ns_window = ns_view.window() if hasattr(ns_view, "window") else None
-
-        if not ns_window:
-            # 윈도우 타이틀이나 번호로 폴백 탐색
-            for win in AppKit.NSApp.windows():
+        # Tk 의 winfo_id() 는 macOS 빌드에 따라 NSView* 가 아니다. 그대로 포인터로
+        # 캐스팅해 메시지를 보내면 세그폴트가 난다(try/except 로도 못 막음). 그래서
+        # 실제 NSWindow 객체들을 제목으로 안전하게 찾는다.
+        ns_window = None
+        app = AppKit.NSApplication.sharedApplication()
+        for win in (app.windows() or []):
+            try:
                 if win.title() == "DeskCal":
                     ns_window = win
                     break
+            except Exception:
+                continue
 
         if not ns_window:
-            return False
+            return False   # 못 찾으면 일반 창으로 뜬다 (바탕화면 고정·블러만 생략)
 
         # 1. 데스크톱 레벨로 창 고정 (kCGDesktopWindowLevel = kCGNormalWindowLevel - 1)
         # 미션 컨트롤이나 '데스크탑 보기'를 해도 항상 바탕화면 위에 유지됨
