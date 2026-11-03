@@ -1,0 +1,89 @@
+name: Test macOS
+
+# Mac 없이 실제 macOS 러너에서 테스트 + 실행 스모크 + 스크린샷을 돌린다.
+# 결과(통과/실패)는 체크로, 화면은 아티팩트(스크린샷)로 확인한다.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/macos-support
+    paths:
+      - 'deskcal.py'
+      - 'platform_helper.py'
+      - 'tests/**'
+      - '.github/workflows/test-macos.yml'
+
+jobs:
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pillow pyobjc-framework-Cocoa pyobjc-framework-Quartz
+
+      - name: Unit tests (cross-platform suite)
+        id: tests
+        continue-on-error: true
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python tests/test_deskcal.py
+
+      - name: macOS native tests
+        id: mactests
+        continue-on-error: true
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python tests/test_macos_native.py
+
+      - name: Launch smoke test + screenshots
+        id: smoke
+        continue-on-error: true
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          mkdir -p artifacts
+          export DESKCAL_DIR="$RUNNER_TEMP/deskcaldata"
+          # 데모 데이터로 실제 화면이 차게 띄운다 (개인정보 없음)
+          python tests/make_screenshots.py > artifacts/screenshots.log 2>&1 || true
+          cp -f docs/*.png artifacts/ 2>/dev/null || true
+          # 앱을 직접 띄워 몇 초 살아있는지 + 전체 화면 캡처
+          ( python deskcal.py --float > artifacts/app.log 2>&1 & echo $! > app.pid ) || true
+          sleep 10
+          if kill -0 "$(cat app.pid)" 2>/dev/null; then
+            echo "alive=yes" >> "$GITHUB_OUTPUT"
+            echo "APP RUNNING after 10s" | tee -a artifacts/result.txt
+          else
+            echo "alive=no" >> "$GITHUB_OUTPUT"
+            echo "APP EXITED early (see app.log)" | tee -a artifacts/result.txt
+          fi
+          screencapture -x artifacts/desktop.png 2>/dev/null || echo "screencapture blocked" | tee -a artifacts/result.txt
+          kill "$(cat app.pid)" 2>/dev/null || true
+          # 크래시 로그 수집
+          cp -f "$DESKCAL_DIR/crash.log" artifacts/ 2>/dev/null || true
+          cp -f "$DESKCAL_DIR/error.log" artifacts/ 2>/dev/null || true
+
+      - name: Upload artifacts (screenshots + logs)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-test-results
+          path: artifacts/
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## macOS test results"
+            echo "- Unit tests: ${{ steps.tests.outcome }}"
+            echo "- macOS native tests: ${{ steps.mactests.outcome }}"
+            echo "- Launch smoke (alive after 10s): ${{ steps.smoke.outputs.alive }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # 단위 테스트가 실패면 잡 전체를 실패로 표시
+          test "${{ steps.tests.outcome }}" = "success"
