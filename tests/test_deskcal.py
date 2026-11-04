@@ -652,7 +652,8 @@ if deskcal.IS_WIN:
     check(deskcal.wallpaper_sig() != before, "바탕화면에 파일·폴더가 생기면 바뀐 것으로 알아챔")
     deskcal.desktop_dirs = real_dirs
 else:
-    check(app.glass_img is None, "macOS 는 네이티브 블러(NSVisualEffectView)라 Tk 유리 이미지는 없음")
+    if app.glass_img:
+        check(app.glass_img.width() == app.w() and app.glass_img.height() == app.h(), "macOS 유리 배경 창 크기와 일치")
 app.set_glass("off")
 check(app.glass_img is None and json.load(open(deskcal.CONF_FILE))["glass"] == "off",
       "'단색'으로 바꾸면 유리 없이 저장됨")

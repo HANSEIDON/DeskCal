@@ -224,8 +224,103 @@ def _glass_init():
     _gdi_ready = True
 
 
+_mac_wall_cache = {}
+
+
+def get_macos_wallpaper_image():
+    """macOS 데스크톱 배경화면 파일 경로를 반환한다."""
+    try:
+        import AppKit
+        ws = AppKit.NSWorkspace.sharedWorkspace()
+        for screen in (AppKit.NSScreen.screens() or []):
+            url = ws.desktopImageURLForScreen_(screen)
+            if url and url.path():
+                p = str(url.path())
+                if os.path.exists(p):
+                    return p
+    except Exception:
+        pass
+    for fallback in ["/tmp/wallpaper.png",
+                     "/Library/Desktop Pictures/Sonoma.heic",
+                     "/Library/Desktop Pictures/Ventura.heic",
+                     "/System/Library/CoreServices/DefaultDesktop.heic",
+                     "/System/Library/Desktop Pictures/Solid Colors/Stone.png"]:
+        if os.path.exists(fallback):
+            return fallback
+    return None
+
+
+def make_glass_mac(x, y, w, h, tint, alpha, shrink=72):
+    """macOS 환경에서 바탕화면 이미지를 크롭하고 블러 및 틴트를 적용하여 BGRA 바이트열을 반환한다."""
+    try:
+        from PIL import Image
+        import io
+
+        path = get_macos_wallpaper_image()
+        if not path or not os.path.exists(path):
+            return None
+
+        rect = desk_rect()
+        dw, dh = rect[2], rect[3]
+        if dw <= 0 or dh <= 0:
+            dw, dh = 1920, 1080
+
+        mtime = os.path.getmtime(path)
+        cache_key = (path, dw, dh)
+        cached = _mac_wall_cache.get(cache_key)
+        if cached and cached[0] == mtime:
+            screen_img = cached[1]
+        else:
+            base_img = None
+            try:
+                base_img = Image.open(path)
+                base_img.load()
+            except Exception:
+                try:
+                    import AppKit
+                    ns_img = AppKit.NSImage.alloc().initWithContentsOfFile_(path)
+                    if ns_img:
+                        tiff = ns_img.TIFFRepresentation()
+                        if tiff:
+                            base_img = Image.open(io.BytesIO(tiff.bytes()))
+                            base_img.load()
+                except Exception:
+                    pass
+            if not base_img:
+                return None
+
+            screen_img = base_img.resize((dw, dh), Image.Resampling.BILINEAR)
+            _mac_wall_cache[cache_key] = (mtime, screen_img)
+
+        cx0 = max(0, min(dw - 1, x))
+        cy0 = max(0, min(dh - 1, y))
+        cx1 = max(cx0 + 2, min(dw, x + w))
+        cy1 = max(cy0 + 2, min(dh, y + h))
+
+        cropped = screen_img.crop((cx0, cy0, cx1, cy1))
+        if cropped.size != (w, h):
+            cropped = cropped.resize((w, h), Image.Resampling.BILINEAR)
+
+        bw, bh = max(2, w // shrink), max(2, h // shrink)
+        blurred = cropped.resize((bw, bh), Image.Resampling.BILINEAR).resize((w, h), Image.Resampling.BICUBIC)
+
+        r_t, g_t, b_t = rgb(tint)
+        tint_layer = Image.new("RGB", (w, h), (r_t, g_t, b_t))
+        blended = Image.blend(blurred.convert("RGB"), tint_layer, alpha)
+
+        r, g, b = blended.split()
+        a = Image.new("L", (w, h), 255)
+        bgra = Image.merge("RGBA", (b, g, r, a))
+        return bgra.tobytes()
+
+    except Exception:
+        log("macOS make_glass 실패:\n" + traceback.format_exc())
+        return None
+
 def make_glass(x, y, w, h, tint, alpha, shrink=72):
     """화면 좌표 (x,y,w,h) 뒤의 바탕화면을 흐리게 해 BGRA 바이트로 돌려준다. 실패하면 None."""
+    if IS_MAC:
+        return make_glass_mac(x, y, w, h, tint, alpha, shrink)
     if not IS_WIN:
         return None
     try:
@@ -355,7 +450,23 @@ def wallpaper_sig():
     """바탕화면 모습이 바뀌었는지 알아보는 값. Windows 추천(Spotlight)·슬라이드쇼는 그림이
     바뀔 때 TranscodedWallpaper 를 새로 쓴다. 알려주는 경로는 늦게 바뀌기도 해서 둘 다 본다.
     바탕화면 폴더는 아이콘이 생기거나 지워지거나 이름이 바뀌면 변경 시각이 바뀐다."""
-    if not IS_WIN:                 # macOS 유리는 NSVisualEffectView 네이티브라 감지 불필요
+    if IS_MAC:
+        path = get_macos_wallpaper_image()
+        sig = [path]
+        if path and os.path.exists(path):
+            try:
+                st = os.stat(path)
+                sig.append((st.st_mtime_ns, st.st_size))
+            except OSError:
+                sig.append(None)
+        for d in desktop_dirs():
+            try:
+                st = os.stat(d)
+                sig.append((st.st_mtime_ns, st.st_size))
+            except OSError:
+                sig.append(None)
+        return tuple(sig)
+    if not IS_WIN:
         return ()
     buf = ctypes.create_unicode_buffer(520)
     user32.SystemParametersInfoW(0x0073, 520, buf, 0)       # SPI_GETDESKWALLPAPER
@@ -370,6 +481,16 @@ def wallpaper_sig():
 
 
 def desk_rect():
+    if IS_MAC:
+        try:
+            import AppKit
+            screen = AppKit.NSScreen.mainScreen()
+            if screen:
+                frame = screen.frame()
+                return 0, 0, int(frame.size.width), int(frame.size.height)
+        except Exception:
+            pass
+        return 0, 0, 1920, 1080
     rc = RECT()
     user32.GetWindowRect(user32.FindWindowW("Progman", None), ctypes.byref(rc))
     return rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top
@@ -1557,10 +1678,6 @@ class DeskCal(tk.Tk):
         (드래그용 바탕화면 전체 유리는 조금 뒤에 따로 만든다: prepare_desk)"""
         self.layout()
         apply_theme(self.theme)
-        if IS_MAC:
-            # macOS는 순정 NSVisualEffectView로 실시간 블러 처리하므로 8회 지연 루프를 생략 (0초 처리)
-            self.glass_img = self._desk = None
-            return
         W, H = self.w(), self.h()
         alpha = GLASS.get(self.glass)
         if not alpha:
@@ -1618,9 +1735,6 @@ class DeskCal(tk.Tk):
         self.geometry("%dx%d" % (W, H))
         self.make_background()
         self.configure(bg=BG)
-        if IS_MAC:
-            alpha = 0.82 if self.glass == "clear" else (0.90 if self.glass == "soft" else 1.0)
-            self.attributes("-alpha", alpha)
 
         # 창 전체가 캔버스 한 장이다. 위젯은 배경이 불투명해 유리 위에 올리면 네모난
         # 자국이 생기므로, 유리 위에 보이는 머리줄과 달력은 캔버스에 직접 그린다.
