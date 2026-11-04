@@ -235,13 +235,16 @@ def setup_macos_window(tk_root, is_dark=True):
             if btn:
                 btn.setHidden_(True)
 
-        # 2. 데스크톱 레벨로 창 고정 (Finder 바탕화면 아이콘 바로 위 레이어)
-        # kCGDesktopIconWindowLevel + 1을 사용하여 Finder 아이콘이 클릭을 가로채지 못하게 함
+        # 2. 데스크톱 레벨로 창 고정 (일반 앱 창 바로 뒤 레벨: -1)
+        # Safari, Chrome, 터미널 등 일반 앱 뒤에 머무르면서 바탕화면 위에서 상시 조작 가능
         try:
-            desktop_level = AppKit.CGWindowLevelForKey(AppKit.kCGDesktopIconWindowLevelKey)
+            normal_level = getattr(AppKit, "kCGNormalWindowLevel", 0)
+            ns_window.setLevel_(normal_level - 1)
         except Exception:
-            desktop_level = getattr(AppKit, "kCGDesktopIconWindowLevel", 2147483603)
-        ns_window.setLevel_(desktop_level + 1)
+            ns_window.setLevel_(-1)
+        ns_window.orderBack_(None)
+        if hasattr(ns_window, "setHidesOnDeactivate_"):
+            ns_window.setHidesOnDeactivate_(False)
 
         # 3. 모든 Spaces(가상 데스크톱)에 상시 표시 + 미션컨트롤 사이클 제외
         ns_window.setCollectionBehavior_(

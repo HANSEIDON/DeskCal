@@ -1328,6 +1328,7 @@ class DeskCal(tk.Tk):
     def set_size(self, idx):
         self.size_idx = min(max(idx, 0), len(SIZES) - 1)
         self.conf["size"] = self.size_idx
+        self._fonts.clear()
         self.build()
         self.ensure_on_screen()
         self.save_conf()
@@ -1656,7 +1657,8 @@ class DeskCal(tk.Tk):
         """창 안 배치를 숫자로 정한다. 유리 배경의 패널 평균색을 잴 때도 쓴다."""
         W, H = self.w(), self.h()
         self.pad = self.px(18)
-        self.head_h = self.px(66)
+        head_u = 0.40 + 0.60 * self.u()
+        self.head_h = max(48, int(round(66 * head_u)))
         pw = int(W * 0.38)
         gap = self.px(18)
         self.card_box = (W - self.pad - pw, self.head_h, W - self.pad, H - self.pad)
@@ -1892,10 +1894,12 @@ class DeskCal(tk.Tk):
     def head_button(self, tag, x1, cy, label, cmd, active=False, size=12, tip=None):
         """오른쪽 끝이 x1 인 알약 모양 버튼을 그리고 왼쪽 끝 x 를 돌려준다."""
         c = self.base
-        fnt = self.f(size, active)
-        tw = self.measure(label, self.fpx(size), active)
-        w = tw + self.px(26)
-        h = self.px(34)
+        head_u = 0.40 + 0.60 * self.u()
+        btn_font_px = max(10, int(round(size * head_u)))
+        fnt = (FONT, -btn_font_px, "bold") if active else (FONT, -btn_font_px)
+        tw = self.measure(label, btn_font_px, active)
+        w = tw + max(20, int(round(26 * head_u)))
+        h = max(26, int(round(34 * head_u)))
         x0 = x1 - w
         idle = SEL_BG if active else mix(BG, FG, 0.10)
         hover = SEL_BG if active else mix(BG, FG, 0.18)
@@ -1917,8 +1921,10 @@ class DeskCal(tk.Tk):
         c.delete("head")
         W, cy = self.w(), self.head_h * 0.52
         gap = self.px(8)
+        head_u = 0.40 + 0.60 * self.u()
+        title_font_px = max(15, int(round(21 * head_u)))
         c.create_text(self.pad + self.px(4), cy, anchor="w", text="", fill=FG,
-                      font=self.f(21, True), tags=("head", "title"))
+                      font=(FONT, -title_font_px, "bold"), tags=("head", "title"))
         x = self.head_button("b_menu", W - self.pad, cy, "≡", self.menu, size=15,
                              tip=self.t("tip_menu"))
         for key in ("tt", "cal"):                # 달력 / 시간표 전환
@@ -3472,12 +3478,23 @@ class DeskCal(tk.Tk):
     def drag_move(self, e):
         if self._drag:
             self._drag_pos = (e.x_root - self._drag[0], e.y_root - self._drag[1])
+            if not getattr(self, "_drag_job", None):
+                self._drag_job = self.after_idle(self._flush_drag_move)
+
+    def _flush_drag_move(self):
+        self._drag_job = None
+        if self._drag and self._drag_pos:
             self.geometry("+%d+%d" % self._drag_pos)
             if self.glass_img:
                 self.move_glass()
 
     def drag_end(self, _):
+        if getattr(self, "_drag_job", None):
+            self.after_cancel(self._drag_job)
+            self._drag_job = None
         if self._drag:
+            if self._drag_pos:
+                self.geometry("+%d+%d" % self._drag_pos)
             self._drag = None
             self.update_idletasks()
             self._drag_pos = None
@@ -3496,7 +3513,8 @@ class DeskCal(tk.Tk):
             m.grab_release()
 
     def new_menu(self, parent):
-        return tk.Menu(parent, tearoff=0, bg=CARD, fg=FG, font=(FONT, -self.fpx(13)),
+        menu_fpx = max(11, min(15, int(round(13 * (0.50 + 0.50 * self.u())))))
+        return tk.Menu(parent, tearoff=0, bg=CARD, fg=FG, font=(FONT, -menu_fpx),
                        activebackground=SEL_BG, activeforeground=FG, bd=0)
 
     def radio(self, menu, label, on, cmd):
