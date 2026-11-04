@@ -1618,6 +1618,9 @@ class DeskCal(tk.Tk):
         self.geometry("%dx%d" % (W, H))
         self.make_background()
         self.configure(bg=BG)
+        if IS_MAC:
+            alpha = 0.82 if self.glass == "clear" else (0.90 if self.glass == "soft" else 1.0)
+            self.attributes("-alpha", alpha)
 
         # 창 전체가 캔버스 한 장이다. 위젯은 배경이 불투명해 유리 위에 올리면 네모난
         # 자국이 생기므로, 유리 위에 보이는 머리줄과 달력은 캔버스에 직접 그린다.
