@@ -128,15 +128,18 @@ class TestMacOSNative(unittest.TestCase):
         app.lang = "ko"
         self.assertEqual(app.t("tip_delete"), "지우기 (⌘Z로 되돌리기)")
         
-        # 2. ⌘ 단축키 안전 처리 확인
+        # 2. ⌘ 단축키 안전 처리 확인 ('c'는 핸들러가 처리 후 "break" 반환)
         class MockEvent:
             def __init__(self, keycode=0, keysym=None, widget=None):
                 self.keycode = keycode
                 self.keysym = keysym
                 self.widget = widget
-        # keysym='c'
+        # keysym='c' -> 'break'
         ev = MockEvent(keysym='c')
-        self.assertIsNone(deskcal.DeskCal.on_ctrl_key(app, ev))
+        self.assertEqual(deskcal.DeskCal.on_ctrl_key(app, ev), "break")
+        # keysym='z' -> None (Ctrl+Z는 다른 핸들러)
+        ev_z = MockEvent(keysym='z')
+        self.assertIsNone(deskcal.DeskCal.on_ctrl_key(app, ev_z))
         print("\n[PASS] macOS ⌘ 단축키 및 텍스트 치환 검증 완료!")
 
 
