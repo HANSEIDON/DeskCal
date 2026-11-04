@@ -137,7 +137,7 @@ jobs:
           # 세그폴트 트레이스백에서 우리 코드 프레임만 (어느 파일 몇 줄 무슨 함수)
           echo "size unit=$(wc -c < artifacts/unit_tests.log 2>/dev/null) app=$(wc -c < artifacts/app.log 2>/dev/null)"
           PAYLOAD=$( { echo "FAILS:"; grep -hE '^FAIL' artifacts/unit_tests.log 2>/dev/null | head -6; echo "END:"; tail -1 artifacts/unit_tests.log 2>/dev/null; } | tr -s ' ' | head -c 185 | base64 | tr '+/' '-_' | tr -d '=\n' )
-          PAYLOAD2=$( tail -c 90 artifacts/unit_tests.log 2>/dev/null | base64 | tr '+/' '-_' | tr -d '=\n' )
+          PAYLOAD2=$( grep -hE '\[INFO\]|FAIL|Error' artifacts/native_tests.log 2>/dev/null | head -3 | head -c 170 | base64 | tr '+/' '-_' | tr -d '=\n' )
           echo "STATUS=import-${{ steps.importcheck.outcome }}__unit-${{ steps.tests.outcome }}__native-${{ steps.mactests.outcome }}__alive-${{ steps.smoke.outputs.alive }}" >> "$GITHUB_ENV"
           echo "B64=$PAYLOAD" >> "$GITHUB_ENV"
           echo "B64APP=$PAYLOAD2" >> "$GITHUB_ENV"

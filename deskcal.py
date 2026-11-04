@@ -226,76 +226,159 @@ def _glass_init():
 
 _mac_wall_cache = {}
 
+# macOS: 화면·바탕화면 정보는 화면 스레드에서만 AppKit 으로 읽어 여기에 둔다. 유리는 다른
+# 스레드에서 만드는데 AppKit 은 화면 스레드 전용이라, 그쪽에서는 이 값만 읽는다.
+_mac_screen = {"path": None, "rect": (0, 0, 1920, 1080), "work": None, "mode": "fill",
+               "at": (None, None)}
+_MAC_FALLBACK_WALLPAPERS = ("/tmp/wallpaper.png",
+                            "/Library/Desktop Pictures/Sonoma.heic",
+                            "/Library/Desktop Pictures/Ventura.heic",
+                            "/System/Library/CoreServices/DefaultDesktop.heic",
+                            "/System/Library/Desktop Pictures/Solid Colors/Stone.png")
 
-def get_macos_wallpaper_image():
-    """macOS 데스크톱 배경화면 파일 경로를 반환한다."""
+
+def tk_rect_of(frame, primary_h):
+    """Cocoa 화면 사각형(왼쪽 아래 원점, 위로 +) → Tk 좌표(주 화면 왼쪽 위 원점, 아래로 +)."""
+    x, y, w, h = frame
+    return int(x), int(round(primary_h - (y + h))), int(w), int(h)
+
+
+def pick_screen(rects, px, py):
+    """Tk 좌표 화면 사각형들 중 점 (px, py) 가 들어 있는 것의 번호. 없으면 가장 가까운 화면."""
+    best, best_d = 0, None
+    for i, (l, t, w, h) in enumerate(rects):
+        if l <= px < l + w and t <= py < t + h:
+            return i
+        dx = max(l - px, 0, px - (l + w))
+        dy = max(t - py, 0, py - (t + h))
+        if best_d is None or dx * dx + dy * dy < best_d:
+            best, best_d = i, dx * dx + dy * dy
+    return best
+
+
+def fill_box(iw, ih, sw, sh):
+    """macOS 기본 '화면 채우기'처럼 그림을 비율 유지로 키워 화면을 덮고 가운데를 자른다.
+    (키울 너비, 높이, 자를 왼쪽, 위) 를 돌려준다."""
+    s = max(sw / float(iw), sh / float(ih))
+    nw, nh = max(sw, int(iw * s + 0.9999)), max(sh, int(ih * s + 0.9999))
+    return nw, nh, (nw - sw) // 2, (nh - sh) // 2
+
+
+def mac_update_screen(px=None, py=None):
+    """(화면 스레드 전용) 점 (px, py) 가 있는 화면의 크기·작업 영역·바탕화면 파일을 새로 읽는다.
+    점을 안 주면 마지막으로 본 자리를 쓴다."""
+    if not IS_MAC:
+        return _mac_screen
+    if px is None:
+        px, py = _mac_screen["at"]
     try:
         import AppKit
+        screens = list(AppKit.NSScreen.screens() or [])
+        if not screens:
+            return _mac_screen
+
+        def fr(r):
+            return r.origin.x, r.origin.y, r.size.width, r.size.height
+        ph = screens[0].frame().size.height
+        rects = [tk_rect_of(fr(sc.frame()), ph) for sc in screens]
+        i = pick_screen(rects, px, py) if px is not None else 0
+        scr = screens[i]
+        l, t, w, h = tk_rect_of(fr(scr.visibleFrame()), ph)
         ws = AppKit.NSWorkspace.sharedWorkspace()
-        for screen in (AppKit.NSScreen.screens() or []):
-            url = ws.desktopImageURLForScreen_(screen)
-            if url and url.path():
-                p = str(url.path())
-                if os.path.exists(p):
-                    return p
+        url = ws.desktopImageURLForScreen_(scr)
+        path = str(url.path()) if url is not None and url.path() else None
+        mode = "fill"
+        try:
+            opts = ws.desktopImageOptionsForScreen_(scr) or {}
+            sc = opts.get(AppKit.NSWorkspaceDesktopImageScalingKey)
+            if sc is not None and int(sc) == int(AppKit.NSImageScaleAxesIndependently):
+                mode = "stretch"
+        except Exception:
+            pass
+        _mac_screen.update(path=path if path and os.path.exists(path) else None,
+                           rect=rects[i], work=(l, t, l + w, t + h), mode=mode, at=(px, py))
     except Exception:
-        pass
-    for fallback in ["/tmp/wallpaper.png",
-                     "/Library/Desktop Pictures/Sonoma.heic",
-                     "/Library/Desktop Pictures/Ventura.heic",
-                     "/System/Library/CoreServices/DefaultDesktop.heic",
-                     "/System/Library/Desktop Pictures/Solid Colors/Stone.png"]:
+        log("macOS 화면 정보 읽기 실패:\n" + traceback.format_exc())
+    return _mac_screen
+
+
+def get_macos_wallpaper_image():
+    """macOS 바탕화면 그림 파일 (화면 스레드에서 읽어 둔 값, 없으면 기본 그림)."""
+    p = _mac_screen["path"]
+    if p and os.path.exists(p):
+        return p
+    for fallback in _MAC_FALLBACK_WALLPAPERS:
         if os.path.exists(fallback):
             return fallback
     return None
 
 
+def _mac_decode_wallpaper(path, max_px):
+    """바탕화면 그림을 화면 크기로 줄여서 읽는다. ImageIO 는 HEIC 도 처음부터 작게 풀어서
+    빠르고 메모리도 적게 쓴다 (예전엔 큰 HEIC 를 통째로 TIFF 로 바꿔 몇 초씩 걸렸다).
+    ImageIO·CoreGraphics 는 다른 스레드에서 불러도 된다."""
+    from PIL import Image
+    try:
+        import Quartz
+        from Foundation import NSURL
+        src = Quartz.CGImageSourceCreateWithURL(NSURL.fileURLWithPath_(path), None)
+        if src is not None:
+            opts = {Quartz.kCGImageSourceCreateThumbnailFromImageAlways: True,
+                    Quartz.kCGImageSourceCreateThumbnailWithTransform: True,
+                    Quartz.kCGImageSourceThumbnailMaxPixelSize: int(max_px)}
+            img = Quartz.CGImageSourceCreateThumbnailAtIndex(src, 0, opts)
+            if img is not None:
+                w, h = Quartz.CGImageGetWidth(img), Quartz.CGImageGetHeight(img)
+                ctx = Quartz.CGBitmapContextCreate(None, w, h, 8, 0,
+                                                   Quartz.CGColorSpaceCreateDeviceRGB(),
+                                                   Quartz.kCGImageAlphaPremultipliedLast)
+                Quartz.CGContextDrawImage(ctx, Quartz.CGRectMake(0, 0, w, h), img)
+                out = Quartz.CGBitmapContextCreateImage(ctx)
+                data = bytes(Quartz.CGDataProviderCopyData(Quartz.CGImageGetDataProvider(out)))
+                stride = Quartz.CGImageGetBytesPerRow(out)
+                return Image.frombuffer("RGBA", (w, h), data, "raw", "RGBA", stride, 1).convert("RGB")
+    except Exception:
+        log("바탕화면 그림(ImageIO) 읽기 실패, PIL 로 다시:\n" + traceback.format_exc())
+    img = Image.open(path)
+    img.draft("RGB", (int(max_px), int(max_px)))
+    return img.convert("RGB")
+
+
 def make_glass_mac(x, y, w, h, tint, alpha, shrink=36):
-    """macOS 환경에서 바탕화면 이미지를 크롭하고 블러 및 틴트를 적용하여 BGRA 바이트열을 반환한다."""
+    """macOS: 바탕화면 그림에서 창 뒤 부분을 잘라 흐리게 하고 덮개색을 씌워 BGRA 바이트로 돌려준다.
+    다른 스레드에서 불리므로 AppKit 은 쓰지 않는다 (화면 정보는 _mac_screen)."""
     try:
         from PIL import Image
-        import io
 
         path = get_macos_wallpaper_image()
-        if not path or not os.path.exists(path):
+        if not path:
             return None
-
-        rect = desk_rect()
-        dw, dh = rect[2], rect[3]
+        sl, st, dw, dh = _mac_screen["rect"]
         if dw <= 0 or dh <= 0:
-            dw, dh = 1920, 1080
+            sl, st, dw, dh = 0, 0, 1920, 1080
+        mode = _mac_screen["mode"]
 
         mtime = os.path.getmtime(path)
-        cache_key = (path, dw, dh)
+        cache_key = (path, dw, dh, mode)
         cached = _mac_wall_cache.get(cache_key)
         if cached and cached[0] == mtime:
             screen_img = cached[1]
         else:
-            base_img = None
-            try:
-                base_img = Image.open(path)
-                base_img.load()
-            except Exception:
-                try:
-                    import AppKit
-                    ns_img = AppKit.NSImage.alloc().initWithContentsOfFile_(path)
-                    if ns_img:
-                        tiff = ns_img.TIFFRepresentation()
-                        if tiff:
-                            base_img = Image.open(io.BytesIO(tiff.bytes()))
-                            base_img.load()
-                except Exception:
-                    pass
-            if not base_img:
-                return None
-
-            screen_img = base_img.resize((dw, dh), Image.Resampling.BILINEAR)
+            base = _mac_decode_wallpaper(path, max(dw, dh))
+            if mode == "stretch":
+                screen_img = base.resize((dw, dh), Image.Resampling.BILINEAR)
+            else:                               # 기본 '화면 채우기': 비율 유지, 가운데 자르기
+                nw, nh, ox, oy = fill_box(base.width, base.height, dw, dh)
+                screen_img = base.resize((nw, nh), Image.Resampling.BILINEAR).crop(
+                    (ox, oy, ox + dw, oy + dh))
+            _mac_wall_cache.clear()             # 바탕화면·화면이 바뀌면 옛 그림은 버린다
             _mac_wall_cache[cache_key] = (mtime, screen_img)
 
-        cx0 = max(0, min(dw - 1, x))
-        cy0 = max(0, min(dh - 1, y))
-        cx1 = max(cx0 + 2, min(dw, x + w))
-        cy1 = max(cy0 + 2, min(dh, y + h))
+        lx, ly = x - sl, y - st                 # 그 화면 안에서의 위치
+        cx0 = max(0, min(dw - 1, lx))
+        cy0 = max(0, min(dh - 1, ly))
+        cx1 = max(cx0 + 2, min(dw, lx + w))
+        cy1 = max(cy0 + 2, min(dh, ly + h))
 
         cropped = screen_img.crop((cx0, cy0, cx1, cy1))
         if cropped.size != (w, h):
@@ -451,8 +534,9 @@ def wallpaper_sig():
     바뀔 때 TranscodedWallpaper 를 새로 쓴다. 알려주는 경로는 늦게 바뀌기도 해서 둘 다 본다.
     바탕화면 폴더는 아이콘이 생기거나 지워지거나 이름이 바뀌면 변경 시각이 바뀐다."""
     if IS_MAC:
+        mac_update_screen()                 # 화면 스레드: 바탕화면 파일을 새로 읽는다
         path = get_macos_wallpaper_image()
-        sig = [path]
+        sig = [path, _mac_screen["rect"], _mac_screen["mode"]]
         if path and os.path.exists(path):
             try:
                 st = os.stat(path)
@@ -482,15 +566,7 @@ def wallpaper_sig():
 
 def desk_rect():
     if IS_MAC:
-        try:
-            import AppKit
-            screen = AppKit.NSScreen.mainScreen()
-            if screen:
-                frame = screen.frame()
-                return 0, 0, int(frame.size.width), int(frame.size.height)
-        except Exception:
-            pass
-        return 0, 0, 1920, 1080
+        return _mac_screen["rect"]          # 화면 스레드에서 읽어 둔 값 (위젯이 있는 화면)
     rc = RECT()
     user32.GetWindowRect(user32.FindWindowW("Progman", None), ctypes.byref(rc))
     return rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top
@@ -832,6 +908,7 @@ WIN_TITLE = "DeskCal"
 GWL_EXSTYLE, WS_EX_TOOLWINDOW = -20, 0x80
 HWND_TOP, HWND_BOTTOM, HWND_TOPMOST, HWND_NOTOPMOST = 0, 1, -1, -2
 GW_HWNDNEXT = 2
+GW_HWNDPREV = 3
 SWP_KEEP = 0x0001 | 0x0002 | 0x0010     # NOSIZE | NOMOVE | NOACTIVATE
 SWP_SHOW = 0x0001 | 0x0002 | 0x0040     # NOSIZE | NOMOVE | SHOWWINDOW
 SW_SHOWNOACTIVATE = 4
@@ -844,6 +921,11 @@ DESK_SHELL_CLASSES = (
     "XamlExplorerHostIslandWindow",
 )   # 바탕화면 및 윈도우 셸 UI 관련 창
 DESK_CLASSES = DESK_SHELL_CLASSES
+# 탐색기가 잠깐 띄우는 메뉴(바탕화면 파일 우클릭 메뉴 등). 이게 앞에 와도 다른 앱으로
+# 돌아간 게 아니다. Windows 11 새 메뉴는 버전마다 클래스 이름이 달라서, 클래스 대신
+# '탐색기 프로세스가 띄운 창인가'로 본다 (is_shell_ui).
+SHELL_MENU_CLASSES = ("#32768",)                                   # 클래식 팝업 메뉴
+EXPLORER_APP_CLASSES = ("CabinetWClass", "ExploreWClass", "#32770")  # 폴더 창·속성 창은 앱 창
 
 
 _CLASS_BUF = ctypes.create_unicode_buffer(64)
@@ -1072,6 +1154,7 @@ class DeskCal(tk.Tk):
         self._z = "startup"
         self._fg_start = None
         self._topmost = False
+        self._shell_pid = (0.0, 0)     # (확인한 시각, 탐색기 프로세스 번호)
         self.glass = self.conf.get("glass") if self.conf.get("glass") in GLASS else "soft"
         self.glass_img = None
         self._glass_org = (0, 0)       # 유리 이미지 왼쪽 위의 화면 좌표
@@ -1157,6 +1240,11 @@ class DeskCal(tk.Tk):
             try:
                 import signal
                 signal.signal(signal.SIGUSR1, lambda *_: self.after(0, self.summon))
+            except Exception:
+                pass
+            try:   # Dock 아이콘을 다시 누르면 불러내고, ⌘Q 로 끌 때도 설정을 저장한다
+                self.createcommand("::tk::mac::ReopenApplication", lambda *_: self.summon())
+                self.createcommand("::tk::mac::Quit", lambda *_: self.quit_app())
             except Exception:
                 pass
         if not self.float_mode:
@@ -1364,6 +1452,24 @@ class DeskCal(tk.Tk):
     def owns(self, h):
         return win_pid(h) == os.getpid()
 
+    def shell_pid(self):
+        """탐색기(바탕화면·작업표시줄) 프로세스 번호. 탐색기가 다시 켜질 수 있어 몇 초마다 새로 본다."""
+        now = time.time()
+        if now - self._shell_pid[0] > 5:
+            tray = user32.FindWindowW("Shell_TrayWnd", None)
+            self._shell_pid = (now, win_pid(tray) if tray else 0)
+        return self._shell_pid[1]
+
+    def is_shell_ui(self, h, cls):
+        """바탕화면·작업표시줄, 그리고 탐색기가 잠깐 띄우는 메뉴(파일 우클릭 메뉴 등)인가.
+        이런 창이 앞에 와도 '다른 앱으로 돌아갔다'고 보지 않는다."""
+        if cls in DESK_SHELL_CLASSES or cls in SHELL_MENU_CLASSES:
+            return True
+        if cls in EXPLORER_APP_CLASSES:
+            return False
+        pid = self.shell_pid()
+        return bool(pid) and win_pid(h) == pid
+
     def is_below(self, top):
         """top 창보다 내 창이 아래에 있는가 (top 에서 아래로 따라 내려가 찾는다)."""
         h, n = user32.GetWindow(top, GW_HWNDNEXT), 0
@@ -1405,13 +1511,28 @@ class DeskCal(tk.Tk):
         self._z = "showdesk"
         log("바탕화면 보기 감지 - 바탕화면 위로 올림%s" % (" (맨 위 층)" if self._topmost else ""))
 
-    def lower_to_desktop(self):
+    def lower_to_desktop(self, why=None):
         if self._z == "showdesk":
-            log("바탕화면 보기 끝 - 원래 자리로")
+            log("바탕화면 보기 끝 - 원래 자리로%s" % (" (앞 창: %s)" % why if why else ""))
         if self._topmost:
             user32.SetWindowPos(self.hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_KEEP)
             self._topmost = False
         user32.SetWindowPos(self.hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_KEEP)
+        # 바탕화면을 누르면 바탕화면 창이 위젯 위로 올라와 있을 수 있다. 그 상태로 맨 밑에
+        # 두면 바탕화면 밑에 깔려 사라지므로, 그때는 바탕화면 창 바로 위에 둔다.
+        desk = self.is_covered_by_desktop()
+        if desk:
+            above = user32.GetWindow(desk, GW_HWNDPREV)
+            user32.SetWindowPos(self.hwnd, above or HWND_TOP, 0, 0, 0, 0, SWP_KEEP)
+            log("바탕화면이 위에 있어 그 바로 위에 둠")
+        self._z = "bottom"
+
+    def mac_lower(self):
+        """(macOS) 메인 창을 일반 창 바로 아래 층(-1)으로 되돌린다."""
+        win = getattr(self, "_ns_window", None)
+        if win is not None:
+            win.setLevel_(-1)
+            win.orderBack_(None)
         self._z = "bottom"
 
     def summon(self, quiet=False):
@@ -1424,10 +1545,10 @@ class DeskCal(tk.Tk):
             try:
                 import AppKit
                 AppKit.NSApp.activateIgnoringOtherApps_(True)
-                for win in (AppKit.NSApp.windows() or []):
-                    if win.title() == "DeskCal":
-                        win.makeKeyAndOrderFront_(None)
-                        break
+                win = getattr(self, "_ns_window", None)    # 메인 창 (안내창도 제목이 'DeskCal'이다)
+                if win is not None:
+                    win.setLevel_(0)       # 불러낼 땐 일반 창 높이로 올려 다른 창 위에 보이게
+                    win.makeKeyAndOrderFront_(None)
             except Exception:
                 pass
             self.lift()
@@ -1462,14 +1583,14 @@ class DeskCal(tk.Tk):
             return
         fg = user32.GetForegroundWindow()
         fg_cls = win_class(fg) if fg else ""
-        is_desk_shell = (not fg) or (fg_cls in DESK_SHELL_CLASSES) or self.owns(fg)
+        is_desk_shell = (not fg) or self.owns(fg) or self.is_shell_ui(fg, fg_cls)
 
         if self._z == "showdesk":
-            # 바탕화면 보기 중에는 바탕화면·작업표시줄이나 위젯을 만지는 동안 그대로 둔다.
+            # 바탕화면 보기 중에는 바탕화면·작업표시줄·탐색기 메뉴나 위젯을 만지는 동안 그대로 둔다.
             # 진짜 다른 앱 창(Chrome 등)으로 돌아갔을 때만 바탕화면 보기를 끝낸다.
-            if fg and not self.owns(fg) and fg_cls not in DESK_SHELL_CLASSES:
+            if fg and not is_desk_shell:
                 if user32.IsWindowVisible(fg) and not is_cloaked(fg):
-                    self.lower_to_desktop()
+                    self.lower_to_desktop(why=fg_cls)
             return
 
         if fg and self.owns(fg):                      # 위젯을 쓰는 중
@@ -1503,7 +1624,15 @@ class DeskCal(tk.Tk):
     def z_tick(self):
         self._alive = time.time()
         if IS_MAC:
-            # macOS는 WindowServer가 네이티브로 창 순서를 관리하므로 60ms 폴링 대신 1초 주기로 완화
+            # macOS 는 WindowServer 가 창 순서를 관리한다. 1초마다 '불러낸 뒤 다른 앱으로 갔는가'만
+            # 보고, 그때 한 번만 바탕화면 층으로 되돌린다 (계속 내리면 깜빡이고 안내창이 숨는다).
+            if self._z == "summoned" and time.time() - self._summon_t > 1.0:
+                try:
+                    import AppKit
+                    if not AppKit.NSApp.isActive():
+                        self.mac_lower()
+                except Exception:
+                    pass
             self._jobs["z"] = self.after(1000, self.z_tick)
             return
         try:
@@ -1536,19 +1665,10 @@ class DeskCal(tk.Tk):
                 r = mi.rcWork
                 return r.left, r.top, r.right, r.bottom
         if IS_MAC:
-            try:
-                import AppKit
-                screen = AppKit.NSScreen.mainScreen()
-                if screen:
-                    vf = screen.visibleFrame()
-                    sf = screen.frame()
-                    l = int(vf.origin.x)
-                    w = int(vf.size.width)
-                    h = int(vf.size.height)
-                    t = int(sf.size.height - (vf.origin.y + vf.size.height))
-                    return l, t, l + w, t + h
-            except Exception:
-                pass
+            x, y = self.window_pos()
+            info = mac_update_screen(x + self.w() // 2, y + self.h() // 2)   # 위젯이 있는 화면
+            if info.get("work"):
+                return info["work"]
             return 0, 30, self.winfo_screenwidth(), self.winfo_screenheight() - 60
         return 0, 0, self.winfo_screenwidth(), self.winfo_screenheight()
 
@@ -1675,6 +1795,24 @@ class DeskCal(tk.Tk):
         except Exception:
             return self.winfo_x(), self.winfo_y()
 
+    def retry_glass_later(self):
+        """(macOS) 유리를 못 만들었으면 2초 뒤 다시 만든다 (최대 5번). refresh_glass 는 유리가
+        이미 있어야 움직이므로, 이게 없으면 첫 유리를 놓쳤을 때 끝내 단색으로 남았다."""
+        n = getattr(self, "_glass_retries", 0)
+        if n >= 5 or getattr(self, "_glass_retry_job", None):
+            return
+        self._glass_retries = n + 1
+
+        def again():
+            self._glass_retry_job = None
+            if self.glass_img:
+                return
+            if self._drag or self.busy():
+                self.retry_glass_later()
+            else:
+                self.build()
+        self._glass_retry_job = self.after(2000, again)
+
     def make_background(self):
         """창 뒤 바탕화면으로 유리 배경을 만들고, 그 색에 맞춰 나머지 색을 정한다.
         (드래그용 바탕화면 전체 유리는 조금 뒤에 따로 만든다: prepare_desk)"""
@@ -1686,14 +1824,22 @@ class DeskCal(tk.Tk):
             self.glass_img = self._desk = None
             return
         x, y = self.window_pos()
+        if IS_MAC:
+            mac_update_screen(x + W // 2, y + H // 2)   # 다른 스레드가 쓸 화면 정보를 여기서 읽는다
         raw = None
-        for _ in range(8):
+        # macOS 는 바탕화면 파일을 읽기만 하므로 기다렸다 다시 해 볼 이유가 없다. 실패하면 화면을
+        # 멈추지 않고 잠시 뒤 다시 만든다 (예전엔 최대 8번 × 0.12초 동안 화면이 멈췄다).
+        for _ in range(1 if IS_MAC else 8):
             raw = make_glass_bounded(x, y, W, H, BASE, alpha)
             if raw:
                 break
-            time.sleep(0.12)          # 드래그 재촬영이 한창이면 잠시 양보하고 재시도
+            if not IS_MAC:
+                time.sleep(0.12)      # 드래그 재촬영이 한창이면 잠시 양보하고 재시도
         if not raw:
+            if IS_MAC:
+                self.retry_glass_later()
             return                    # 기존 유리를 지우지 않는다 (단색으로 보이는 것 방지)
+        self._glass_retries = 0
         # 유리 위에 바로 그리는 글자(달력 숫자 등)가 가장 밝은 곳(라이트 모드는 가장
         # 어두운 곳)에서도 4.5:1 이상 대비가 나도록, 모자라면 덮개를 더 진하게 한다.
         # 평균으로도 7:1 이 되게 한다 (밝은 바탕화면에서 '선명하게'도 읽기 편하도록).
