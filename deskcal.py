@@ -1641,12 +1641,9 @@ class DeskCal(tk.Tk):
         c.create_window(cx0, cy0, window=self.cal, anchor="nw")
         self.cal.bind("<Configure>", lambda _: self.draw())
         self.cal.bind("<Button-1>", self.on_click)
+        self.cal.bind("<Control-Button-1>", self.on_tt_ctrl_click)
         if IS_MAC:
             self.cal.bind("<Command-Button-1>", self.on_tt_ctrl_click)
-            self.cal.bind("<Control-Button-1>", self.menu)
-            c.bind("<Control-Button-1>", self.menu)
-        else:
-            self.cal.bind("<Control-Button-1>", self.on_tt_ctrl_click)
         self.cal.bind("<B1-Motion>", self.on_tt_drag)
         self.cal.bind("<ButtonRelease-1>", self.on_tt_release)
         for b in ("<Button-2>", "<Button-3>"):

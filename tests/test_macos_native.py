@@ -73,6 +73,8 @@ class TestMacOSNative(unittest.TestCase):
 
     def test_06_native_isop_cpp_module(self):
         """컴파일된 macOS C++ ISOP 클라이언트 모듈 검증."""
+        if not platform_helper.IS_MAC:
+            self.skipTest("macOS 전용")
         try:
             import _isop_client
             self.assertTrue(hasattr(_isop_client, "get_header"))
@@ -115,6 +117,26 @@ class TestMacOSNative(unittest.TestCase):
             root.destroy()
         except Exception as e:
             print(f"\n[INFO] Tkinter/AppKit 헤드리스 윈도우 테스트 결과: {e}")
+
+    def test_08_macos_shortcuts_and_text_replacement(self):
+        """macOS ⌘ 단축키 처리 및 텍스트 자동 치환 검증."""
+        if not platform_helper.IS_MAC:
+            self.skipTest("macOS 전용")
+        import deskcal
+        # 1. 텍스트 라벨 내 'Ctrl+' -> '⌘' 자동 변환 확인
+        self.assertEqual(deskcal.DeskCal.t(deskcal.DeskCal, "tip_undo"), "실행 취소 (⌘Z)")
+        
+        # 2. ⌘ 단축키 안전 처리 확인
+        class MockEvent:
+            def __init__(self, keycode=0, keysym=None, widget=None):
+                self.keycode = keycode
+                self.keysym = keysym
+                self.widget = widget
+        app = deskcal.DeskCal.__new__(deskcal.DeskCal)
+        # keysym='c'
+        ev = MockEvent(keysym='c')
+        self.assertIsNone(deskcal.DeskCal.on_ctrl_key(app, ev))
+        print("\n[PASS] macOS ⌘ 단축키 및 텍스트 치환 검증 완료!")
 
 
 if __name__ == "__main__":
