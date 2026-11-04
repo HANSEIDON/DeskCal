@@ -965,6 +965,34 @@ if deskcal.IS_WIN:
     app.sync_z()
     check(app._z == "showdesk" and app._topmost, "작업표시줄 클릭으로 바탕화면이 덮었을 때 자동 감지하여 맨 위로 올림")
 
+    # 바탕화면 파일 우클릭: 탐색기가 띄운 메뉴는 '다른 앱'이 아니다 (예전엔 위젯이 바탕화면 밑으로 사라짐)
+    app.is_covered_by_desktop = lambda: None
+    app.is_below = lambda h: False
+    app._shell_pid = (time.time(), 4321)              # 탐색기 프로세스 번호를 고정
+    orig_win_pid = deskcal.win_pid
+    deskcal.win_pid = lambda h: 4321 if h == 99999 else 1
+    for cls in ("#32768", "Microsoft.UI.Content.PopupWindowSiteBridge"):
+        app._z, app._topmost = "showdesk", True
+        deskcal.win_class = lambda h, c=cls: c
+        app.sync_z()
+        check(app._z == "showdesk", "탐색기 우클릭 메뉴(%s)가 떠도 바탕화면 보기 유지" % cls)
+    deskcal.win_class = lambda h: "CabinetWClass"
+    app.sync_z()
+    check(app._z == "bottom", "탐색기 폴더 창이 앞에 오면 바탕화면 보기를 끝냄")
+    deskcal.win_pid = orig_win_pid
+
+    # 맨 밑으로 내렸는데 바탕화면이 덮고 있으면, 그 밑이 아니라 바탕화면 바로 위에 둔다
+    calls = []
+    deskcal.user32.SetWindowPos = lambda *a: calls.append(a[1]) or 1
+    orig_GetWindow = deskcal.user32.GetWindow
+    deskcal.user32.GetWindow = lambda h, rel: 55555 if (h, rel) == (88888, deskcal.GW_HWNDPREV) else 0
+    app.is_covered_by_desktop = lambda: 88888
+    app._z, app._topmost = "showdesk", False
+    app.lower_to_desktop(why="test")
+    check(calls and calls[-1] == 55555 and app._z == "bottom",
+          "바탕화면이 위에 있으면 맨 밑 대신 바탕화면 바로 위로 (%r)" % calls)
+    deskcal.user32.GetWindow = orig_GetWindow
+
     deskcal.user32.GetForegroundWindow = orig_GetForegroundWindow
     deskcal.win_class = orig_win_class
     deskcal.user32.IsWindowVisible = orig_IsWindowVisible
@@ -1016,6 +1044,20 @@ if deskcal.IS_WIN:
     check(deskcal.default_data_dir() == os.path.join(deskcal.HERE, "data"), "스크립트는 옆 data 폴더")
 else:
     check("DeskCal" in deskcal.default_data_dir(), "macOS 데이터 폴더: %s" % deskcal.default_data_dir())
+
+# ------------------------------------------------------------------
+section("macOS 화면 좌표 · 바탕화면 채우기 (순수 계산)")
+check(deskcal.tk_rect_of((0, 0, 1512, 982), 982) == (0, 0, 1512, 982), "주 화면은 그대로")
+check(deskcal.tk_rect_of((1512, 200, 1920, 1080), 982) == (1512, -298, 1920, 1080),
+      "오른쪽 위에 놓인 외부 모니터: Cocoa(아래 원점) → Tk(위 원점)")
+scr = [(0, 0, 1512, 982), (1512, -298, 1920, 1080)]
+check(deskcal.pick_screen(scr, 300, 300) == 0 and deskcal.pick_screen(scr, 2000, 100) == 1,
+      "위젯 가운데가 있는 화면을 고름")
+check(deskcal.pick_screen(scr, 5000, 5000) == 1, "어느 화면에도 없으면 가장 가까운 화면")
+check(deskcal.fill_box(1920, 1080, 1512, 982) == (1746, 982, 117, 0),
+      "16:9 그림을 16:10 화면에: 비율 유지로 높이를 맞추고 좌우를 자름 %r"
+      % (deskcal.fill_box(1920, 1080, 1512, 982),))
+check(deskcal.fill_box(1000, 1000, 1512, 982)[:2] == (1512, 1512), "정사각 그림은 너비를 맞추고 위아래를 자름")
 
 # ------------------------------------------------------------------
 n_fail = RESULTS.count(False)

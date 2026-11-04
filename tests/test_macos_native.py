@@ -151,5 +151,24 @@ class TestMacOSNative(unittest.TestCase):
                 os.remove(tmp_wall)
 
 
+    def test_99_glass_real_wallpaper_fast(self):
+        """실제 바탕화면(HEIC 포함)으로 첫 유리를 1.5초 안에 만든다 (예전엔 큰 HEIC 를 통째로 풀어 멈춤)."""
+        if not platform_helper.IS_MAC:
+            self.skipTest("macOS 전용")
+        import time as _t
+        import deskcal
+        info = deskcal.mac_update_screen(100, 100)
+        self.assertGreater(info["rect"][2], 0)
+        deskcal._mac_wall_cache.clear()
+        t0 = _t.time()
+        raw = deskcal.make_glass_mac(100, 100, 400, 300, "#151821", 0.6)
+        took = _t.time() - t0
+        print("\n[INFO] wallpaper=%s rect=%s mode=%s first-glass=%.2fs"
+              % (info["path"], info["rect"], info["mode"], took))
+        self.assertIsNotNone(raw, "실제 바탕화면으로 유리를 만들어야 합니다.")
+        self.assertEqual(len(raw), 400 * 300 * 4)
+        self.assertLess(took, 1.5, "첫 유리가 1.5초 안에 만들어져야 합니다 (%.2fs)" % took)
+
+
 if __name__ == "__main__":
     unittest.main()

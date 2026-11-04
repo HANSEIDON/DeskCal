@@ -253,6 +253,7 @@ def setup_macos_window(tk_root, is_dark=True):
             AppKit.NSWindowCollectionBehaviorIgnoresCycle
         )
 
+        tk_root._ns_window = ns_window       # 메인 창을 기억한다 (안내창도 제목이 'DeskCal'이다)
         return True
 
     except Exception as e:
