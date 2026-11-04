@@ -59,7 +59,12 @@ def run_desktop_server(path):
         win = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             frame, AppKit.NSWindowStyleMaskBorderless, AppKit.NSBackingStoreBuffered, False
         )
-        win.setLevel_(AppKit.kCGDesktopWindowLevel)
+        try:
+            import Quartz
+            level = Quartz.kCGDesktopWindowLevel
+        except Exception:
+            level = -2147483603
+        win.setLevel_(level)
         win.setCollectionBehavior_(
             AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces |
             AppKit.NSWindowCollectionBehaviorStationary |
