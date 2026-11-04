@@ -126,7 +126,7 @@ class TestMacOSNative(unittest.TestCase):
         # 1. 텍스트 라벨 내 'Ctrl+' -> '⌘' 자동 변환 확인
         app = deskcal.DeskCal.__new__(deskcal.DeskCal)
         app.lang = "ko"
-        self.assertEqual(app.t("tip_undo"), "실행 취소 (⌘Z)")
+        self.assertEqual(app.t("tip_delete"), "지우기 (⌘Z로 되돌리기)")
         
         # 2. ⌘ 단축키 안전 처리 확인
         class MockEvent:
