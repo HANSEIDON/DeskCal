@@ -76,7 +76,7 @@ BASE = FG = ACCENT = ACCENT_INK = SUN = SAT = OK = INK = ""
 BG = CARD = SUNK = LINE = MUTED = DIM = SEL_BG = SEL_BD = TODAY = HOVER = GRID = ""
 
 # 유리 효과: 흐린 바탕화면 위에 BASE 를 얼마나 진하게 덮을지 (높을수록 덜 비침)
-GLASS = {"off": None, "soft": 0.76, "clear": 0.62}
+GLASS = {"off": None, "soft": 0.58, "clear": 0.42}
 
 
 
@@ -250,7 +250,7 @@ def get_macos_wallpaper_image():
     return None
 
 
-def make_glass_mac(x, y, w, h, tint, alpha, shrink=72):
+def make_glass_mac(x, y, w, h, tint, alpha, shrink=36):
     """macOS 환경에서 바탕화면 이미지를 크롭하고 블러 및 틴트를 적용하여 BGRA 바이트열을 반환한다."""
     try:
         from PIL import Image
@@ -1699,9 +1699,10 @@ class DeskCal(tk.Tk):
             pts = region_samples(raw, W, 0, 0, W, H, 30)
             worst = min(contrast(FG, p) for p in pts)
             avg = contrast(FG, region_avg(raw, W, 0, 0, W, H))
-            if (worst >= 4.5 and avg >= 7) or alpha >= 0.92:
+            max_alpha = 0.68 if self.glass == "clear" else 0.80
+            if (worst >= 4.5 and avg >= 7) or alpha >= max_alpha:
                 break
-            alpha = min(0.92, alpha + 0.06)
+            alpha = min(max_alpha, alpha + 0.05)
             raw2 = make_glass_bounded(x, y, W, H, BASE, alpha)
             if not raw2:
                 break
