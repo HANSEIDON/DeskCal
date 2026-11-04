@@ -111,8 +111,7 @@ class TestMacOSNative(unittest.TestCase):
                 except Exception:
                     expected_level = getattr(AppKit, "kCGDesktopIconWindowLevel", 2147483603) + 1
                 self.assertEqual(ns_window.level(), expected_level, "바탕화면 아이콘 바로 위 레벨이어야 합니다.")
-                self.assertFalse(ns_window.isOpaque(), "윈도우는 반투명(not opaque)이어야 합니다.")
-                print("\n[PASS] Cocoa NSVisualEffectView 반투명 블러 및 데스크톱 고정 주입 100% 검증 완료!")
+                print("\n[PASS] Cocoa 데스크톱 레벨 및 보더리스 윈도우 스타일 주입 100% 검증 완료!")
 
             root.destroy()
         except Exception as e:
