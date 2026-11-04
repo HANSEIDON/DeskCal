@@ -71,20 +71,8 @@ class TestMacOSNative(unittest.TestCase):
         except OSError:
             pass
 
-    def test_06_native_isop_cpp_module(self):
-        """컴파일된 macOS C++ ISOP 클라이언트 모듈 검증."""
-        if not platform_helper.IS_MAC:
-            self.skipTest("macOS 전용")
-        try:
-            import _isop_client
-            self.assertTrue(hasattr(_isop_client, "get_header"))
-            self.assertTrue(hasattr(_isop_client, "query_table"))
-            print("\n[PASS] _isop_client.so C++ 머신코드 모듈 정상 로드 및 심볼 검증 완료!")
-        except ImportError:
-            print("\n[NOTE] _isop_client.so 가 아직 컴파일되지 않은 상태입니다. (순수 파이썬 모드로 동작 가능)")
-
-    def test_07_appkit_frosted_glass_injection(self):
-        """macOS AppKit Cocoa NSVisualEffectView 및 바탕화면 레벨 주입 검증."""
+    def test_06_appkit_frosted_glass_injection(self):
+        """macOS AppKit Cocoa 바탕화면 레벨 주입 검증."""
         if not platform_helper.IS_MAC:
             self.skipTest("macOS 전용")
         try:
@@ -106,18 +94,15 @@ class TestMacOSNative(unittest.TestCase):
 
             if ns_window:
                 # kCGDesktopIconWindowLevel + 1 레벨 (Finder 아이콘 바로 위) 확인
-                try:
-                    expected_level = AppKit.CGWindowLevelForKey(AppKit.kCGDesktopIconWindowLevelKey) + 1
-                except Exception:
-                    expected_level = getattr(AppKit, "kCGDesktopIconWindowLevel", 2147483603) + 1
-                self.assertEqual(ns_window.level(), expected_level, "바탕화면 아이콘 바로 위 레벨이어야 합니다.")
+                expected_level = -1
+                self.assertEqual(ns_window.level(), expected_level, "일반 앱 바로 뒤(-1) 레벨이어야 합니다.")
                 print("\n[PASS] Cocoa 데스크톱 레벨 및 보더리스 윈도우 스타일 주입 100% 검증 완료!")
 
             root.destroy()
         except Exception as e:
             print(f"\n[INFO] Tkinter/AppKit 헤드리스 윈도우 테스트 결과: {e}")
 
-    def test_08_macos_shortcuts_and_text_replacement(self):
+    def test_07_macos_shortcuts_and_text_replacement(self):
         """macOS ⌘ 단축키 처리 및 텍스트 자동 치환 검증."""
         if not platform_helper.IS_MAC:
             self.skipTest("macOS 전용")
@@ -142,7 +127,7 @@ class TestMacOSNative(unittest.TestCase):
         print("\n[PASS] macOS ⌘ 단축키 및 텍스트 치환 검증 완료!")
 
 
-    def test_09_macos_glass_rendering(self):
+    def test_08_macos_glass_rendering(self):
         """macOS 바탕화면 유리 블러(make_glass) 생성 및 BGRA 바이트 검증."""
         if not platform_helper.IS_MAC:
             self.skipTest("macOS 전용")

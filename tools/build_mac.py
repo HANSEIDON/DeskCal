@@ -47,32 +47,8 @@ def main():
     os.makedirs(BUILD, exist_ok=True)
     os.makedirs(DIST, exist_ok=True)
 
-    # --- Step 1: Compile Native C++ ISOP Client for macOS ---
-    print("\n[1/4] Compiling macOS native C++ ISOP client (_isop_client.so)...")
-    src_cpp = os.path.join(TOOLS, "_isop_client_mac.cpp")
-    out_so = os.path.join(ROOT, "_isop_client.so")
-
-    if os.path.exists(src_cpp) and not os.path.exists(out_so):
-        py_include = sysconfig.get_path("include")
-        clang_cmd = [
-            "clang++",
-            "-std=c++17",
-            "-O3",
-            "-shared",
-            "-undefined", "dynamic_lookup",
-            f"-I{py_include}",
-            src_cpp,
-            "-lcurl",
-            "-o", out_so,
-        ]
-        try:
-            run(*clang_cmd)
-            print("Successfully compiled _isop_client.so")
-        except Exception as e:
-            print(f"Warning: Failed to compile _isop_client_mac.cpp ({e}). Proceeding without ISOP.")
-
-    # --- Step 2: Packaging Standalone macOS .app Bundle ---
-    print("\n[2/4] Packaging Standalone macOS .app Bundle...")
+    # --- Step 1: Packaging Standalone macOS .app Bundle ---
+    print("\n[1/3] Packaging Standalone macOS .app Bundle...")
     app_name = "DeskCal"
     icon_png = os.path.join(ROOT, "docs", "icon.png")
 
@@ -97,10 +73,6 @@ def main():
     if os.path.exists(os.path.join(ROOT, "docs")):
         pyi_cmd.append(f"--add-data={os.path.join(ROOT, 'docs')}:docs")
 
-    # If _isop_client.so exists, include as native binary
-    if os.path.exists(out_so):
-        pyi_cmd.append(f"--add-binary={out_so}:.")
-
     pyi_cmd.append(os.path.join(ROOT, "deskcal.py"))
 
     run(*pyi_cmd)
@@ -118,8 +90,8 @@ def main():
 
     print(f"Generated App Bundle: {app_bundle}")
 
-    # --- Step 3: Package into DMG ---
-    print("\n[3/4] Creating DMG disk image...")
+    # --- Step 2: Package into DMG ---
+    print("\n[2/3] Creating DMG disk image...")
     dmg_name = f"DeskCal-{ver}-macOS.dmg"
     dmg_path = os.path.join(DIST, dmg_name)
 
@@ -155,7 +127,7 @@ def main():
     # Also build a portable .zip release
     zip_name = f"DeskCal-{ver}-macOS.zip"
     zip_path = os.path.join(DIST, zip_name)
-    print(f"\n[4/4] Creating portable ZIP: {zip_path}")
+    print(f"\n[3/3] Creating portable ZIP: {zip_path}")
     run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app_bundle, zip_path)
 
     # Checksums
