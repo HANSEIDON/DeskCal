@@ -95,22 +95,30 @@ jobs:
           # Setup colorful desktop wallpaper and display background layer
           ( python tests/set_macos_wallpaper.py /tmp/wallpaper.png --serve > artifacts/wallpaper.log 2>&1 & echo $! > bg.pid ) || true
           sleep 2
-          # 1. 유리 모드(Glass - 기본값 soft) 실행 및 캡처
-          ( python deskcal.py --float > artifacts/app.log 2>&1 & echo $! > app.pid ) || true
-          sleep 8
+          # 1. 유리 은은하게 (Glass soft) 실행 및 캡처
+          ( python deskcal.py --float > artifacts/app_soft.log 2>&1 & echo $! > app.pid ) || true
+          sleep 7
           if kill -0 "$(cat app.pid)" 2>/dev/null; then
             echo "alive=yes" >> "$GITHUB_OUTPUT"
-            echo "APP RUNNING after 8s" | tee -a artifacts/result.txt
+            echo "APP RUNNING after 7s" | tee -a artifacts/result.txt
           else
             echo "alive=no" >> "$GITHUB_OUTPUT"
             echo "APP EXITED early (see app.log)" | tee -a artifacts/result.txt
           fi
-          screencapture -x artifacts/desktop_glass.png 2>/dev/null || true
-          cp -f artifacts/desktop_glass.png artifacts/desktop.png 2>/dev/null || true
+          screencapture -x artifacts/desktop_soft.png 2>/dev/null || true
+          cp -f artifacts/desktop_soft.png artifacts/desktop.png 2>/dev/null || true
           kill "$(cat app.pid)" 2>/dev/null || true
           sleep 2
 
-          # 2. 단색 모드(Solid - glass: off) 실행 및 비교 캡처
+          # 2. 유리 투명하게 (Glass clear) 실행 및 캡처
+          python -c 'import json, os; p = os.path.join(os.environ["DESKCAL_DIR"], "config.json"); os.makedirs(os.path.dirname(p), exist_ok=True); d = json.load(open(p)) if os.path.exists(p) else {}; d["glass"] = "clear"; json.dump(d, open(p, "w"))' || true
+          ( python deskcal.py --float > artifacts/app_clear.log 2>&1 & echo $! > app_clear.pid ) || true
+          sleep 6
+          screencapture -x artifacts/desktop_clear.png 2>/dev/null || true
+          kill "$(cat app_clear.pid)" 2>/dev/null || true
+          sleep 2
+
+          # 3. 단색 모드 (Solid - glass: off) 실행 및 캡처
           python -c 'import json, os; p = os.path.join(os.environ["DESKCAL_DIR"], "config.json"); os.makedirs(os.path.dirname(p), exist_ok=True); d = json.load(open(p)) if os.path.exists(p) else {}; d["glass"] = "off"; json.dump(d, open(p, "w"))' || true
           ( python deskcal.py --float > artifacts/app_solid.log 2>&1 & echo $! > app_solid.pid ) || true
           sleep 6
