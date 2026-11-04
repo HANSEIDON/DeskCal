@@ -92,8 +92,9 @@ jobs:
           mkdir -p artifacts
           export DESKCAL_DIR="$RUNNER_TEMP/deskcaldata"
           # 데모 데이터로 실제 화면이 차게 띄운다 (개인정보 없음)
-          python tests/make_screenshots.py > artifacts/screenshots.log 2>&1 || true
-          cp -f docs/*.png artifacts/ 2>/dev/null || true
+          # Setup colorful desktop wallpaper and display background layer
+          ( python tests/set_macos_wallpaper.py /tmp/wallpaper.png --serve > artifacts/wallpaper.log 2>&1 & echo $! > bg.pid ) || true
+          sleep 2
           # 앱을 직접 띄워 몇 초 살아있는지 + 전체 화면 캡처
           ( python deskcal.py --float > artifacts/app.log 2>&1 & echo $! > app.pid ) || true
           sleep 10
@@ -106,6 +107,7 @@ jobs:
           fi
           screencapture -x artifacts/desktop.png 2>/dev/null || echo "screencapture blocked" | tee -a artifacts/result.txt
           kill "$(cat app.pid)" 2>/dev/null || true
+          kill "$(cat bg.pid)" 2>/dev/null || true
           # 크래시 로그 수집
           cp -f "$DESKCAL_DIR/crash.log" artifacts/ 2>/dev/null || true
           cp -f "$DESKCAL_DIR/error.log" artifacts/ 2>/dev/null || true
