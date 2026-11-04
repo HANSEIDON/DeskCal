@@ -985,7 +985,7 @@ class DeskCal(tk.Tk):
                 break
         if not IS_MAC:
             self.overrideredirect(True)
-        self.configure(bg="systemTransparent" if (IS_MAC and self.glass) else BG)
+        self.configure(bg=BG)
         self.dpi = max(1.0, self.winfo_fpixels("1i") / 96.0)
         x = self.conf.get("x", self.winfo_screenwidth() - self.w() - 60)
         self.geometry("+%d+%d" % (x, self.conf.get("y", 60)))
@@ -1230,7 +1230,7 @@ class DeskCal(tk.Tk):
         self.theme = name
         self.conf["theme"] = name
         apply_theme(name)
-        self.configure(bg="systemTransparent" if (IS_MAC and self.glass) else BG)
+        self.configure(bg=BG)
         self.build()
         self.save_conf()
 
@@ -1617,7 +1617,7 @@ class DeskCal(tk.Tk):
         W, H = self.w(), self.h()
         self.geometry("%dx%d" % (W, H))
         self.make_background()
-        self.configure(bg="systemTransparent" if (IS_MAC and self.glass) else BG)
+        self.configure(bg=BG)
 
         # 창 전체가 캔버스 한 장이다. 위젯은 배경이 불투명해 유리 위에 올리면 네모난
         # 자국이 생기므로, 유리 위에 보이는 머리줄과 달력은 캔버스에 직접 그린다.

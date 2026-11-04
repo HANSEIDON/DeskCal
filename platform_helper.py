@@ -250,30 +250,6 @@ def setup_macos_window(tk_root, is_dark=True):
             AppKit.NSWindowCollectionBehaviorIgnoresCycle
         )
 
-        # 4. 투명 배경 처리
-        ns_window.setOpaque_(False)
-        ns_window.setBackgroundColor_(AppKit.NSColor.clearColor())
-
-        # 5. 순정 NSVisualEffectView (Frosted Glass / Vibrancy) 주입
-        content_view = ns_window.contentView()
-        bounds = content_view.bounds()
-
-        effect_view = AppKit.NSVisualEffectView.alloc().initWithFrame_(bounds)
-        effect_view.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
-        effect_view.setBlendingMode_(AppKit.NSVisualEffectBlendingModeBehindWindow)
-
-        # 다크 모드 / 라이트 모드에 따른 블러 머티리얼 설정
-        if is_dark:
-            effect_view.setMaterial_(AppKit.NSVisualEffectMaterialHUDWindow)
-            effect_view.setAppearance_(AppKit.NSAppearance.appearanceNamed_(AppKit.NSAppearanceNameVibrantDark))
-        else:
-            effect_view.setMaterial_(AppKit.NSVisualEffectMaterialUnderWindowBackground)
-            effect_view.setAppearance_(AppKit.NSAppearance.appearanceNamed_(AppKit.NSAppearanceNameVibrantLight))
-
-        effect_view.setState_(AppKit.NSVisualEffectStateActive)
-
-        # 가장 뒤 레이어로 삽입 (Tkinter 컴포넌트들 바로 뒤)
-        content_view.addSubview_positioned_relativeTo_(effect_view, AppKit.NSWindowBelow, None)
         return True
 
     except Exception as e:
