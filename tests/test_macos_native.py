@@ -142,5 +142,29 @@ class TestMacOSNative(unittest.TestCase):
         print("\n[PASS] macOS ⌘ 단축키 및 텍스트 치환 검증 완료!")
 
 
+    def test_09_macos_glass_rendering(self):
+        """macOS 바탕화면 유리 블러(make_glass) 생성 및 BGRA 바이트 검증."""
+        if not platform_helper.IS_MAC:
+            self.skipTest("macOS 전용")
+        import deskcal
+        from PIL import Image
+        import tempfile
+        tmp_wall = tempfile.mktemp(suffix=".png")
+        Image.new("RGB", (800, 600), (80, 120, 200)).save(tmp_wall)
+        try:
+            old_func = deskcal.get_macos_wallpaper_image
+            deskcal.get_macos_wallpaper_image = lambda: tmp_wall
+            raw = deskcal.make_glass(50, 50, 200, 150, "#151821", 0.76)
+            self.assertIsNotNone(raw, "macOS 유리 BGRA 바이트열이 생성되어야 합니다.")
+            self.assertEqual(len(raw), 200 * 150 * 4, "생성된 바이트열 길이가 w*h*4이어야 합니다.")
+            ppm = deskcal.bgra_to_ppm(raw, 200, 150)
+            self.assertTrue(ppm.startswith(b"P6 200 150 255\n"), "유효한 PPM 헤더를 가져야 합니다.")
+            print("\n[PASS] macOS make_glass 및 PPM 생성 100% 검증 완료!")
+        finally:
+            deskcal.get_macos_wallpaper_image = old_func
+            if os.path.exists(tmp_wall):
+                os.remove(tmp_wall)
+
+
 if __name__ == "__main__":
     unittest.main()
