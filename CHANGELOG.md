@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — macOS
+
+### Added
+
+- **Import your PKU timetable on macOS**, with the same steps as on Windows. The 6-month
+  permission code is kept in the login Keychain.
+- ISOP requests now verify the server certificate (macOS reads the system root certificates).
+
+### Changed
+
+- The 课表 import code and the ISOP app key/secret now live in a separate private repository;
+  a release build pulls them into `private/` and injects the secret at build time. A clone
+  without `private/` builds without the import. Nothing secret is stored in this repository.
+- macOS data now lives in `~/Library/Application Support/DeskCal` (an existing `~/DeskCal`
+  from test builds is moved over once).
+
+### Fixed
+
+- Tag builds of the macOS release now build the tagged commit instead of the branch head.
+
 ## 1.2.0 — 2026-10-26
 
 ### Added

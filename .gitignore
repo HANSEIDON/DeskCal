@@ -12,8 +12,13 @@ dist/
 mingw.zip
 mingw*/
 *.so
+# 빌드 때 만들어지는 비밀 헤더 (혹시 build/ 밖에 생겨도 막는다)
+_isop_secrets.h
 *.dylib
 scratch/
 vnc*
 tvn*
 mac_screen*
+
+# 공식 배포판 전용 추가 기능 (별도 비공개 저장소)
+private/

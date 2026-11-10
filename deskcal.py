@@ -42,6 +42,17 @@ def default_data_dir():
     """스크립트로 실행하면 스크립트 옆 data 폴더. exe 는 %LOCALAPPDATA%\\DeskCal 에 둔다
     (exe 폴더는 Program Files 처럼 쓰기 금지일 수 있고, 새 버전으로 폴더를 통째로
     바꿔도 데이터가 남아야 한다)."""
+    if FROZEN and IS_MAC:
+        # macOS 앱은 ~/Library/Application Support/DeskCal. 예전 시험판은 홈 폴더 바로 아래
+        # ~/DeskCal 에 두었으므로, 그 폴더만 있고 새 폴더가 없으면 한 번 옮겨 온다.
+        new, old = get_default_data_dir("DeskCal"), os.path.expanduser("~/DeskCal")
+        if os.path.isdir(old) and not os.path.exists(new):
+            try:
+                os.makedirs(os.path.dirname(new), exist_ok=True)
+                shutil.move(old, new)
+            except OSError:
+                return old
+        return new
     if FROZEN:
         return os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
                             "DeskCal")
@@ -2867,6 +2878,9 @@ class DeskCal(tk.Tk):
         self.exam_box = tk.Frame(self.panel, bg=CARD)
         self.exam_box.pack(fill="x")
         self.build_exams()
+        if addon:                               # 공식 배포판에만 있는 추가 기능의 버튼
+            self.button(self.panel, self.t(addon.BUTTON_TEXT), lambda: addon.run(self), "plain", 10
+                        ).pack(side="bottom", anchor="w", pady=(self.px(10), 0))
 
     def build_exams(self):
         for w in self.exam_box.winfo_children():
@@ -3698,6 +3712,8 @@ class DeskCal(tk.Tk):
         self.radio(wk, self.t("set_even"), not odd, lambda: self.set_week_kind(False))
         m.add_cascade(label=self.t("parity"), menu=wk)
         self.radio(m, self.t("weekend_tt"), self.weekend_tt, self.toggle_weekend_tt)
+        if addon:
+            m.add_command(label=self.t(addon.BUTTON_TEXT), command=lambda: addon.run(self))
 
         on = autostart_enabled()
         self.radio(m, self.t("autostart"), on, lambda: self.set_autostart_pref(not on))
@@ -3810,6 +3826,19 @@ class DeskCal(tk.Tk):
         self.save_conf()
         log("종료 (메뉴)")
         self.destroy()
+
+
+# 공식 배포판에만 들어 있는 추가 기능 모듈 (이 저장소에는 없다). 있으면 스스로 문구와
+# 기능을 붙이고, 없으면 그 버튼 없이 돈다. 소스로 돌릴 때는 옆의 private 폴더에서 찾는다.
+addon = None
+_addon_dir = os.path.join(HERE, "private")
+if not FROZEN and os.path.isdir(_addon_dir) and _addon_dir not in sys.path:
+    sys.path.insert(0, _addon_dir)
+try:
+    import deskcal_addon as addon
+    addon.install(sys.modules[__name__])
+except ImportError:
+    addon = None
 
 
 def already_running():

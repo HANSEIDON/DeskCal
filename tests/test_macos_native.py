@@ -71,7 +71,7 @@ class TestMacOSNative(unittest.TestCase):
         except OSError:
             pass
 
-    def test_06_appkit_frosted_glass_injection(self):
+    def test_06_appkit_frosted_glass_effect(self):
         """macOS AppKit Cocoa 바탕화면 레벨 주입 검증."""
         if not platform_helper.IS_MAC:
             self.skipTest("macOS 전용")
@@ -150,6 +150,57 @@ class TestMacOSNative(unittest.TestCase):
             if os.path.exists(tmp_wall):
                 os.remove(tmp_wall)
 
+
+    def test_20_keychain_secret_roundtrip(self):
+        """권한 코드 보관: 키체인에 넣고 다시 읽는다 (키체인을 못 쓰면 plain 으로 물러난다)."""
+        if not platform_helper.IS_MAC:
+            self.skipTest("macOS 전용")
+        name, value = "deskcal-ci-test", "0123456789abcdef0123456789abcdef"
+        try:
+            stored = platform_helper.protect_secret(name, value)
+            print("\n[INFO] secret backend=%s" % ("keychain" if stored == "keychain" else "plain-fallback"))
+            self.assertIn(stored, ("keychain", "plain:" + value))
+            self.assertEqual(platform_helper.unprotect_secret(name, stored), value)
+            if stored == "keychain":
+                again = platform_helper.protect_secret(name, value[::-1])   # 같은 이름은 덮어쓴다
+                self.assertEqual(again, "keychain")
+                self.assertEqual(platform_helper.unprotect_secret(name, again), value[::-1])
+        finally:
+            platform_helper.forget_secret(name)
+        self.assertEqual(platform_helper.unprotect_secret(name, "keychain"), "")
+        # 따옴표·공백이 든 값은 명령으로 넘기지 않고 plain 으로 둔다
+        self.assertEqual(platform_helper.protect_secret(name, 'a b"c'), 'plain:a b"c')
+
+    def test_21_system_roots_verify_https(self):
+        """시스템 루트 인증서만으로 HTTPS 검증이 된다 (묶음 앱에는 OpenSSL 인증서 묶음이 없다)."""
+        if not platform_helper.IS_MAC:
+            self.skipTest("macOS 전용")
+        import socket
+        import ssl
+        pem = platform_helper.system_root_certs()
+        self.assertIn("BEGIN CERTIFICATE", pem)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)      # 기본 묶음 없이 시스템 루트만
+        ctx.load_verify_locations(cadata=pem)
+        n = ctx.cert_store_stats()["x509_ca"]
+        print("\n[INFO] system roots loaded=%d" % n)
+        self.assertGreater(n, 50)
+        try:
+            with socket.create_connection(("github.com", 443), timeout=10) as s:
+                with ctx.wrap_socket(s, server_hostname="github.com") as t:
+                    self.assertTrue(t.getpeercert())
+        except (socket.timeout, ConnectionError, socket.gaierror) as e:
+            self.skipTest("네트워크 없음: %r" % e)
+
+    def test_22_isop_signing_module(self):
+        """(만들어져 있을 때) 서명 모듈이 macOS 에서 불러와지고 32자리 서명을 돌려준다."""
+        try:
+            import _isop_client
+        except ImportError:
+            self.skipTest("_isop_client 가 빌드되지 않음")
+        sig = _isop_client.sign("user=1&appKey=k&timestamp=1")
+        self.assertRegex(sig, r"^[0-9a-f]{32}$")
+        self.assertNotEqual(sig, _isop_client.sign("user=2&appKey=k&timestamp=1"))
+        self.assertTrue(_isop_client.get_app_key())
 
     def test_99_glass_real_wallpaper_fast(self):
         """실제 바탕화면(HEIC 포함)으로 첫 유리를 1.5초 안에 만든다 (예전엔 큰 HEIC 를 통째로 풀어 멈춤)."""

@@ -211,6 +211,32 @@ This builds `dist/DeskCal-<version>-windows-x64.zip` and its `.sha256` file, com
 `deskcal.py` to machine code with [Nuitka](https://nuitka.net) in an isolated `.build-venv`.
 The open-source build has no 课表 import (see the note above).
 
+### Building the macOS app
+
+```bash
+python tools/build_mac.py
+```
+
+This builds `dist/DeskCal-<version>-macOS.dmg` (and a `.zip`) with PyInstaller; the
+`Build macOS Release` workflow runs the same script on a GitHub macOS runner.
+
+The 课表 import is **not in this repository** (see the note above). Both the import code and
+the ISOP app key/secret live in a separate private repository. A build only includes the
+import when that private repository is checked out next to this one as `private/`:
+
+- **Official release (GitHub Actions):** `Build macOS Release` checks the private repository
+  out into `private/` using the `PRIVATE_REPO` / `PRIVATE_REPO_TOKEN` secrets, then builds the
+  signing module from the `ISOP_APP_KEY` / `ISOP_APP_SECRET` secrets of the `release`
+  environment.
+- **A clone without `private/` (forks, pull requests):** the build still succeeds — it just
+  produces an app without the 课表 import, and the app shows a short notice if you press the
+  import button.
+
+A value shipped inside an app can always be dug out by someone determined; keeping the import
+code and the secret in a private repository, out of the public history, logs and plain-text
+searches, raises the bar but is not a vault. If the secret ever leaks, ask the ISOP
+administrators to reissue it and update the secret.
+
 ## 📝 Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).

@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - feature/macos-support
+      - feature/macos-isop-import
     paths:
       - 'deskcal.py'
       - 'platform_helper.py'

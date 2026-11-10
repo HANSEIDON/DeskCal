@@ -280,3 +280,133 @@ def get_shortcut_keys():
         "pref_key": "Ctrl+,",
         "pref_bind": "<Control-comma>",
     }
+
+
+# ---------- 7. 비밀 값 보관 (Windows DPAPI / macOS 키체인) ----------
+# 학교 권한 코드(authCode)처럼 남이 읽으면 안 되는 값을 설정 파일에 그대로 두지 않는다.
+# protect_secret 이 돌려준 문자열만 파일에 적고, 읽을 때 unprotect_secret 으로 되돌린다.
+#   Windows : DPAPI 로 암호화한 값의 16진수 (이 사용자 계정에서만 풀린다)
+#   macOS   : 값은 로그인 키체인에 넣고 파일에는 "keychain" 이라고만 적는다
+#   그 밖/실패: "plain:<값>" (파일 권한을 0600 으로 좁혀서 쓴다 — restrict_file)
+
+KEYCHAIN_SERVICE = "DeskCal-ISOP"
+_SECURITY = "/usr/bin/security"
+
+
+def _dpapi(data, protect):
+    import ctypes
+    import ctypes.wintypes as wt
+
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wt.DWORD), ("pbData", wt.LPBYTE)]
+    buf = ctypes.create_string_buffer(data, len(data))
+    src = DATA_BLOB(len(data), ctypes.cast(buf, wt.LPBYTE))
+    dst = DATA_BLOB()
+    crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    fn = crypt32.CryptProtectData if protect else crypt32.CryptUnprotectData
+    fn.argtypes = [ctypes.POINTER(DATA_BLOB), ctypes.c_void_p, ctypes.POINTER(DATA_BLOB),
+                   wt.LPVOID, wt.LPVOID, wt.DWORD, ctypes.POINTER(DATA_BLOB)]
+    fn.restype = wt.BOOL
+    if not fn(ctypes.byref(src), None, None, None, None, 0, ctypes.byref(dst)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    out = ctypes.string_at(dst.pbData, dst.cbData)
+    kernel32 = ctypes.WinDLL("kernel32")
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree(dst.pbData)          # DPAPI 버퍼는 LocalAlloc → LocalFree
+    return out
+
+
+def _keychain_word(s):
+    """security 명령에 따옴표 없이 넘겨도 되는 값인가 (학번·32자리 코드는 모두 해당)."""
+    return bool(s) and len(s) <= 256 and all(c.isalnum() or c in "_.@-" for c in s)
+
+
+def _keychain_get(account):
+    r = subprocess.run([_SECURITY, "find-generic-password", "-a", account,
+                        "-s", KEYCHAIN_SERVICE, "-w"],
+                       capture_output=True, text=True, timeout=15)
+    return r.stdout.rstrip("\n") if r.returncode == 0 else None
+
+
+def _keychain_set(account, value):
+    """값을 명령줄 인자로 넘기면 잠깐이나마 프로세스 목록에 보이므로, 대화형 모드의 표준
+    입력으로 넘긴다. 제대로 들어갔는지는 다시 읽어서 확인한다."""
+    if not (_keychain_word(account) and _keychain_word(value)):
+        return False
+    line = "add-generic-password -U -a %s -s %s -w %s\n" % (account, KEYCHAIN_SERVICE, value)
+    subprocess.run([_SECURITY, "-i"], input=line, capture_output=True, text=True, timeout=15)
+    return _keychain_get(account) == value
+
+
+def forget_secret(name):
+    """macOS 키체인에 넣어 둔 값을 지운다 (다른 곳에서는 할 일이 없다)."""
+    if IS_MAC and _keychain_word(name):
+        try:
+            subprocess.run([_SECURITY, "delete-generic-password", "-a", name,
+                            "-s", KEYCHAIN_SERVICE], capture_output=True, timeout=15)
+        except Exception:
+            pass
+
+
+def protect_secret(name, value):
+    """value 를 안전한 곳에 두고, 설정 파일에 적을 문자열을 돌려준다."""
+    if IS_WIN:
+        try:
+            return _dpapi(value.encode("utf-8"), True).hex()
+        except Exception:
+            return "plain:" + value
+    if IS_MAC:
+        try:
+            if _keychain_set(name, value):
+                return "keychain"
+        except Exception:
+            pass
+    return "plain:" + value
+
+
+def unprotect_secret(name, stored):
+    """protect_secret 이 돌려준 문자열 → 원래 값. 못 풀면 빈 문자열."""
+    if not stored:
+        return ""
+    if stored.startswith("plain:"):
+        return stored[6:]
+    if stored == "keychain":
+        try:
+            return (_keychain_get(name) if IS_MAC else None) or ""
+        except Exception:
+            return ""
+    if IS_WIN:
+        try:
+            return _dpapi(bytes.fromhex(stored), False).decode("utf-8")
+        except Exception:
+            pass
+    # 예전 판은 32자리 권한 코드를 그대로 적어 두었다
+    if len(stored) == 32 and all(c in "0123456789abcdefABCDEF" for c in stored):
+        return stored
+    return ""
+
+
+def restrict_file(path):
+    """(macOS·리눅스) 파일을 이 사용자만 읽고 쓰게 한다. Windows 는 사용자 폴더 권한을 따른다."""
+    if not IS_WIN:
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+
+
+# ---------- 8. HTTPS 인증서 (macOS 묶음 앱) ----------
+
+def system_root_certs():
+    """macOS 가 믿는 루트 인증서들을 PEM 글자로 돌려준다 (다른 OS 는 빈 문자열).
+    .app 으로 묶으면 파이썬의 OpenSSL 이 인증서 묶음을 찾지 못해 모든 HTTPS 검증이
+    실패한다. 검증을 끄는 대신 시스템 키체인의 루트를 직접 읽어 준다."""
+    if not IS_MAC:
+        return ""
+    try:
+        r = subprocess.run([_SECURITY, "find-certificate", "-a", "-p",
+                            "/System/Library/Keychains/SystemRootCertificates.keychain"],
+                           capture_output=True, text=True, timeout=20)
+        return r.stdout if r.returncode == 0 else ""
+    except Exception:
+        return ""

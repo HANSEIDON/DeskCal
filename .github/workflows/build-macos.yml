@@ -12,6 +12,11 @@ on:
       - 'v*'
     branches:
       - feature/macos-support
+      - feature/macos-isop-import
+
+# 릴리스에 파일을 올릴 때만 쓰기 권한이 필요하다
+permissions:
+  contents: write
 
 jobs:
   build-macos:
@@ -20,7 +25,23 @@ jobs:
       - name: Checkout Source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch || 'feature/macos-support' }}
+          # 태그로 시작된 빌드는 그 태그를 그대로 빌드한다 (예전엔 항상 브랜치 끝을 빌드했다)
+          ref: ${{ github.event.inputs.branch || github.ref }}
+          persist-credentials: false
+
+      # 가져오기 기능은 별도 비공개 저장소에 있다. 토큰이 설정돼 있을 때만 private/ 로 가져온다.
+      # (토큰이 없는 포크 빌드는 이 단계를 건너뛰고 가져오기 없는 앱을 만든다.)
+      - name: Check out private import add-on
+        env:
+          PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        if: env.PRIVATE_REPO_TOKEN != ''
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          ref: ${{ secrets.PRIVATE_REPO_REF }}
+          path: private
+          persist-credentials: false
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -33,6 +54,10 @@ jobs:
           pip install pillow pyinstaller pyobjc-framework-Cocoa pyobjc-framework-Quartz
 
       - name: Run macOS Build Pipeline (.app & .dmg)
+        # 비밀 값은 이 단계에만 넘긴다. 값이 없으면(포크 등) 가져오기 없는 앱이 만들어진다.
+        env:
+          ISOP_APP_KEY: ${{ secrets.ISOP_APP_KEY }}
+          ISOP_APP_SECRET: ${{ secrets.ISOP_APP_SECRET }}
         run: |
           python tools/build_mac.py
 
