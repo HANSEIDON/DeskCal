@@ -96,7 +96,7 @@ def main():
     if build_native is not None:                       # 가져오기 기능을 앱 안에 넣는다
         pyi_cmd += [f"--paths={PRIV}", "--hidden-import=deskcal_addon"]
     if isop_module:
-        pyi_cmd.append("--hidden-import=_isop_client")
+        pyi_cmd += [f"--add-binary={isop_module}:.", "--hidden-import=_isop_client"]
 
     if os.path.exists(icon_png):
         pyi_cmd.append(f"--icon={icon_png}")
@@ -124,8 +124,23 @@ def main():
 
     # 넣기로 한 것이 앱 안에 실제로 들어갔는지 확인한다
     def in_bundle(prefix):
-        return any(name.startswith(prefix)
-                   for _dir, _sub, names in os.walk(app_bundle) for name in names)
+        # 1. 앱 번들 파일시스템 상에 존재하는지 확인 (바이너리 모듈, 리소스 등)
+        if any(name.startswith(prefix)
+               for _dir, _sub, names in os.walk(app_bundle) for name in names):
+            return True
+        # 2. PyInstaller PYZ 아카이브 / TOC 에 포함되었는지 확인 (순수 파이썬 모듈)
+        pyi_work = os.path.join(BUILD, "pyi_work")
+        if os.path.exists(pyi_work):
+            for _dir, _sub, names in os.walk(pyi_work):
+                if "PYZ-00.toc" in names:
+                    try:
+                        with open(os.path.join(_dir, "PYZ-00.toc"), "r", encoding="utf-8", errors="ignore") as f:
+                            toc_content = f.read()
+                            if f"'{prefix}'" in toc_content or f'"{prefix}"' in toc_content:
+                                return True
+                    except Exception:
+                        pass
+        return False
 
     if build_native is not None:
         if not in_bundle("deskcal_addon"):
