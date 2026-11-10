@@ -977,11 +977,11 @@ def launch_command():
 
 
 def autostart_enabled():
-    return is_autostart_enabled()
+    return is_autostart_enabled(RUN_NAME)
 
 
 def set_autostart(on):
-    set_autostart_platform(on, frozen=FROZEN, log_func=log)
+    set_autostart_platform(on, frozen=FROZEN, log_func=log, name=RUN_NAME)   # 테스트는 RUN_NAME 을 바꿔 진짜 값을 안 건드린다
 
 
 # ---------- 파일 ----------

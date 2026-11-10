@@ -91,14 +91,14 @@ def get_launch_command(frozen=False):
     return [py, entry, "--autostart"]
 
 
-def is_autostart_enabled():
+def is_autostart_enabled(name="DeskCal"):
     """로그온 시 자동 실행 여부 확인."""
     if IS_WIN:
         import winreg
         run_key = r"Software\Microsoft\Windows\CurrentVersion\Run"
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, run_key) as k:
-                winreg.QueryValueEx(k, "DeskCal")
+                winreg.QueryValueEx(k, name)
             return True
         except OSError:
             return False
@@ -108,7 +108,7 @@ def is_autostart_enabled():
     return False
 
 
-def set_autostart(on, frozen=False, log_func=None):
+def set_autostart(on, frozen=False, log_func=None, name="DeskCal"):
     """로그온 시 자동 실행 켜기/끄기."""
     def _log(msg):
         if log_func:
@@ -123,10 +123,10 @@ def set_autostart(on, frozen=False, log_func=None):
             )
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, run_key, 0, winreg.KEY_SET_VALUE) as k:
                 if on:
-                    winreg.SetValueEx(k, "DeskCal", 0, winreg.REG_SZ, cmd_str)
+                    winreg.SetValueEx(k, name, 0, winreg.REG_SZ, cmd_str)
                 else:
                     try:
-                        winreg.DeleteValue(k, "DeskCal")
+                        winreg.DeleteValue(k, name)
                     except FileNotFoundError:
                         pass
             _log("윈도우 시작 시 실행: %s" % ("켬" if on else "끔"))
