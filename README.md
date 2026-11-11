@@ -9,25 +9,25 @@
 [![Release](https://img.shields.io/github/v/release/HANSEIDON/DeskCal)](https://github.com/HANSEIDON/DeskCal/releases/latest)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 [![License](https://img.shields.io/github/license/HANSEIDON/DeskCal)](LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/HANSEIDON/DeskCal/total)](https://github.com/HANSEIDON/DeskCal/releases)
 
 [![PKU ISOP](https://img.shields.io/badge/PKU%20ISOP-Powered%20%E2%80%A2%20Timetable%20Import-1a1a1a?style=for-the-badge&labelColor=8A0011)](#-import-your-pku-timetable)
 
 ---
 
-### [⬇️ **Download DeskCal 1.2.1 (Setup.exe)**](https://github.com/HANSEIDON/DeskCal/releases/latest)
-**Windows 10 / 11** · 1-Click Installer (~30 MB) · No Administrator Rights Required
+### [⬇️ **Download DeskCal 1.3.0 (Setup.exe)**](https://github.com/HANSEIDON/DeskCal/releases/latest)
+**Windows 10 / 11** · 1-Click Installer (~32 MB) · No Administrator Rights Required
 
 ---
 
 </div>
 
 DeskCal sits on your Windows desktop, just above the wallpaper. Deadlines, exams,
-选课 dates and your weekly timetable are always one glance away. It runs fully offline
-and needs no account.
+选课 dates and your weekly timetable are always one glance away. Your data stays on
+your computer, and it needs no account.
 
-> **New in 1.2.1 — [Weekend timetable support](#-features). Added 7-day timetable view (Saturday & Sunday) with smart auto-detection on PKU timetable import.** DeskCal is powered by Peking University's official data platform (ISOP), so it can load your real
-> timetable and exam dates straight from the university instead of you typing them in.
+> **New in 1.3.0 — Repeating & multi-day events, natural event times, .ics calendar export, compact mode, and zero-flicker UI.** DeskCal is powered by Peking University's official data platform (ISOP), so it can load your real timetable and exam dates straight from the university instead of you typing them in.
+>
+> 🍏 **Note on macOS Support:** I originally planned to release the macOS version alongside 1.3.0. However, due to macOS-specific display and window behavior bugs currently being fixed, the Mac release is taking a little more time. I sincerely apologize to everyone who has been waiting — I am polishing it up and will release the macOS build separately as soon as it's rock-solid!
 
 ![Calendar view, dark theme](docs/calendar-dark.png)
 
@@ -36,6 +36,7 @@ and needs no account.
 - 🎓 **Import your PKU timetable** straight from the university through the official ISOP
   platform — review what changed, then apply ([details](#-import-your-pku-timetable)).
 - 📅 **Calendar with notes**: click a day and type. Color it, tick it off, edit in place.
+  Add a time ("Dentist 3pm"), repeat it weekly, or stretch it over several days.
 - ⏰ **Upcoming deadlines** with D-day badges. Orange within a week, red for today and tomorrow.
 - 🗓️ **Timetable**: 5-day (Mon–Fri) or 7-day (Mon–Sun) view, 12 periods on PKU's schedule. The current class is highlighted.
 - 🔁 **Odd / even weeks** (单周 / 双周). Classes not meeting this week are shown dashed.
@@ -43,6 +44,8 @@ and needs no account.
   calendar and in Upcoming.
 - 🪟 **Always on the desktop**, even after Win+D. Frosted-glass look, dark and light themes.
 - 🌐 **English / 한국어 / 中文**, with a bundled font so CJK text renders cleanly.
+- 📤 **Export** to Google / Outlook / Apple Calendar (.ics), or back everything up to one file.
+- 🪶 **Compact mode**: just today's classes, events and what's coming up.
 - 💾 **Autosave and Ctrl+Z.** Light on resources: about 75 MB of memory and under 1% of one CPU core when idle ([details](#-performance)).
 
 ![Timetable view, dark theme](docs/timetable-dark.png)
@@ -50,7 +53,7 @@ and needs no account.
 
 ## 🚀 Install
 
-> **Windows 10 / 11 only.** DeskCal uses Windows APIs and won't run on macOS or Linux.
+> **Windows 10 / 11.** (macOS version is currently being refined and coming soon).
 
 ### Option 1: Download the app (recommended)
 
@@ -84,7 +87,7 @@ The hash should match the one on the release page.
 ### Start with Windows
 
 DeskCal starts with Windows by default, quietly behind your windows. To stop that, turn off
-**≡ → Start with Windows**. The setting is an entry in your user's `Run` registry key (no
+**⚙ → Start with Windows**. The setting is an entry in your user's `Run` registry key (no
 admin rights needed), and turning it off removes the entry.
 
 ## 🎓 Import your PKU timetable
@@ -115,22 +118,27 @@ and nothing is uploaded.
 | To | Do |
 | --- | --- |
 | Move the widget | Drag the title bar or the empty margin |
-| Open settings | Click **≡**, or right-click the title bar or calendar |
+| Open settings | Click **⚙**, or right-click the title bar or calendar |
+| Change month | **‹ ›**, or scroll the mouse wheel over the calendar |
 | Add an event | Pick a day, type, press Enter |
+| Give it a time | Type it with the title: `Dentist 3pm`, `회의 오후 3시`, `下午3点开会` |
+| Repeat it | Click **↻** beside the color chips (weekly / every 2 weeks / monthly) |
+| Multi-day event | Click the first day, **Shift+click** the last day, then type |
+| See everything coming up | Click the **Upcoming** title |
 | Complete / recolor | Click the dot / right-click the dot |
 | Edit / delete | Click the title / click **×** |
 | Undo | Ctrl+Z |
 | Add a class | **Timetable** → click a cell → type the course name (saves automatically) |
 | Odd / even-week class | **Every / Odd / Even** in the side panel |
 | Exam dates | Select a class → **Exams · Deadlines**. They show on the calendar as squares |
-| Set which week is odd | **≡ → Odd / even week** |
+| Set which week is odd | **⚙ → Odd / even week** |
 
-The settings menu also has language, theme, background and size. After two
-idle minutes, the calendar jumps back to today.
+Settings also has language, theme, background, size (including **Compact**), export and
+backup. After two idle minutes, the calendar jumps back to today.
 
 ## 💾 Your data
 
-All data stays on your computer. Open the folder with **≡ → Open data folder**.
+All data stays on your computer. Open the folder with **⚙ → Open data folder**.
 
 | Running | Data folder |
 | --- | --- |
@@ -138,6 +146,10 @@ All data stays on your computer. Open the folder with **≡ → Open data folder
 | From source | `data\` next to `deskcal.py` |
 
 Every save keeps a `.bak` copy. Set `DESKCAL_DIR` to use a different folder.
+
+To move to another computer, use **⚙ → Export backup** and **Import backup** there.
+**⚙ → Export .ics** writes a file for Google Calendar, Outlook or Apple Calendar. Both are
+saved to your Documents folder.
 
 <details>
 <summary>Change the class period times</summary>
@@ -173,7 +185,7 @@ DeskCal is built to sit on your desktop all day without you noticing it.
 | Startup | about 1 second |
 | Memory | about 73 MB |
 | CPU while idle | 0.4 % of one core |
-| Network | none by default (only connects to official PKU ISOP server when importing 课表) |
+| Network | once a day, asks GitHub for the latest version number (nothing is sent; turn it off in **⚙**). Otherwise only the official PKU ISOP server when importing 课表 |
 | Download / on disk | 40.0 MB zip / 65 MB folder, of which 32 MB is the CJK font |
 
 Measured on Windows 11 with an Intel Core Ultra 7 258V and 32 GB RAM, using a fresh copy
@@ -186,9 +198,9 @@ when something actually changes, so the effect on battery life is negligible.
 
 To measure on your own machine, quit DeskCal and run:
 
-``powershell
+```powershell
 powershell -ExecutionPolicy Bypass -File tools\benchmark.ps1
-``
+```
 
 ## 🛠️ Development
 

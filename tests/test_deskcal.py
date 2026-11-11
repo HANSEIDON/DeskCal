@@ -10,7 +10,7 @@ import os
 import shutil
 import sys
 try:
-    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding='utf-8')
 except Exception:
     pass
 import tempfile
@@ -695,18 +695,57 @@ check(app.winfo_x() == good, "화면 안이면 위치를 건드리지 않음")
 app.destroy()
 
 # ------------------------------------------------------------------
-section("시험 · 달력 · 시간표")
+section("북대 门户 课表 가져오기")
 
-# 가져오기(ISOP) 기능은 공개 소스에서 빠졌다. 아래 기능 테스트는 시간표·과목을 직접 넣고 확인한다.
-app, d = fresh(files={
-    "timetable.json": {
-        "0-1": {"title": "高等数学（B）", "room": "理教107", "color": deskcal.PALETTE[5], "week": "all"},
-        "0-2": {"title": "高等数学（B）", "room": "理教107", "color": deskcal.PALETTE[5], "week": "all"},
-        "1-3": {"title": "体育", "room": "五四网球场", "color": deskcal.PALETTE[2], "week": "all"},
-        "4-2": {"title": "程序设计", "room": "理教215", "color": deskcal.PALETTE[1], "week": "odd"}},
-    "courses.json": {
-        "高等数学（B）": {"fin_date": "2027-01-05", "fin_time": "上午"},
-        "程序设计": {"fin_date": "2027-01-12", "fin_time": "09:00"}}})
+
+def cell(name, info, exam=""):
+    return {"courseName": '<div><span>%s(主)<br>上课信息：%s  教师：某某 <br>考试信息：%s</span></div>'
+                          % (name, info, exam)}
+
+
+EMPTY = {"courseName": ""}
+row = lambda **kw: {k: kw.get(k, EMPTY) for k in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")}
+resp = {"success": True, "course": [
+    row(mon=cell("高等数学（B）", "1-16周 每周 理教107", "20270105 星期二 上午")),
+    row(mon=cell("高等数学（B）", "1-16周 每周 理教107", "20270105 星期二 上午"),
+        fri={"courseName": cell("程序设计", "1-16周 单周 理教215", "20270110 星期日 上午")["courseName"] + "<br>"
+             + cell("实验课", "1-16周 双周 理教216")["courseName"]}),
+    row(tue={"courseName": '体育(主)<br>上课信息：1-16周 每周   教师：某某 备注：五四网球场  自带球拍<br>考试信息：'},
+        sat=cell("周末课", "1-16周 每周 二教101")),
+]}
+got = deskcal.parse_pku_cell(resp["course"][0]["mon"]["courseName"])
+check(got == [{"title": "高等数学（B）", "room": "理教107", "week": "all",
+               "exam": ("2027-01-05", "上午")}], "칸 하나: 과목·강의실·주차·시험 %r" % got)
+check([c["week"] for c in deskcal.parse_pku_cell(resp["course"][1]["fri"]["courseName"])]
+      == ["odd", "even"], "한 칸에 두 과목 (单周 / 双周)")
+check(deskcal.parse_pku_cell(resp["course"][2]["tue"]["courseName"])[0]["room"] == "五四网球场",
+      "강의실이 비면 备注에서 장소를 찾음")
+slots, weekend = deskcal.parse_pku_table(resp)
+check(set(slots) == {(0, 1), (0, 2), (4, 2), (1, 3)} and weekend == 1, "칸 위치 · 주말 수업 셈")
+slots7, weekend7 = deskcal.parse_pku_table(resp, n_days=7)
+check(set(slots7) == {(0, 1), (0, 2), (4, 2), (1, 3), (5, 3)} and weekend7 == 0, "7일 모드: 주말 수업도 시간표에 포함")
+
+app, d = fresh(files={"timetable.json": {
+    "0-1": {"title": "高等数学（B）", "room": "", "color": deskcal.PALETTE[5], "week": "all"},
+    "3-9": {"title": "高等数学（B）", "room": "", "color": deskcal.PALETTE[5], "week": "all"},
+    "2-6": {"title": "직접 넣은 수업", "room": "", "color": deskcal.PALETTE[2], "week": "all"}},
+    "courses.json": {"程序设计": {"fin_date": "2027-01-12", "fin_time": "09:00"}}})
+shown = []
+deskcal.DeskCal.notice = lambda self, msg: shown.append(msg)
+app.isop_conf = lambda: None            # ISOP·파일 모두 없을 때의 안내 경로 확인
+app.import_pku()
+check(shown == [app.t("pku_paused")] and app.tt == json.load(open(deskcal.TT_FILE, encoding="utf-8")),
+      "가져오기 버튼은 지금은 안내만 띄우고 아무것도 바꾸지 않음")
+app.apply_pku(resp)
+tt = json.load(open(deskcal.TT_FILE, encoding="utf-8"))
+check(tt["0-1"]["color"] == deskcal.PALETTE[5] and "3-9" not in tt,
+      "같은 과목은 원래 색 유지, 옮겨진 옛 칸은 정리")
+check(tt["2-6"]["title"] == "직접 넣은 수업", "직접 넣은 다른 수업은 그대로")
+check(tt["4-2"]["week"] == "odd" and tt["1-3"]["room"] == "五四网球场", "주차·강의실 저장")
+check(json.load(open(deskcal.COURSE_FILE, encoding="utf-8"))["高等数学（B）"]
+      == {"fin_date": "2027-01-05", "fin_time": "上午"}, "시험 일정은 期末考试 칸으로")
+check(json.load(open(deskcal.COURSE_FILE, encoding="utf-8"))["程序设计"]["fin_date"] == "2027-01-12",
+      "직접 적어둔 시험 날짜는 덮어쓰지 않음")
 
 app.courses["옛 과목"] = {"mid_date": "%02d-%02d" % (app.today.month, app.today.day)}
 check(app.exams_on(app.today) == [("mid", "옛 과목", "")], "예전 형식 날짜(연도 없음)도 달력에 나옴")
@@ -729,7 +768,41 @@ row.event_generate("<Button-1>")
 app.update()
 check(app.view == "tt" and app.tt_sel == (0, 1), "누르면 시간표의 그 과목 칸으로 (%s %s)"
       % (app.view, app.tt_sel))
-app.set_view("tt")
+app.undo()
+check(json.load(open(deskcal.TT_FILE, encoding="utf-8"))["3-9"]["title"] == "高等数学（B）",
+      "Ctrl+Z 로 가져오기 전체를 되돌림")
+
+# 바뀐 점 확인: 항목별로 고른 것만 적용
+app.apply_pku(resp)
+moved = json.loads(json.dumps(resp))
+moved["course"][0]["mon"]["courseName"] = moved["course"][0]["mon"]["courseName"].replace("理教107", "二教401")
+moved["course"][1]["mon"]["courseName"] = moved["course"][1]["mon"]["courseName"].replace("理教107", "二教401")
+changes, _ = app.pku_changes(moved)
+kinds = {(c["kind"], c["title"]): c for c in changes}
+check(("set", "高等数学（B）") in kinds and "二教401" in kinds[("set", "高等数学（B）")]["text"],
+      "강의실이 바뀐 걸 찾아냄: %r" % [c["text"] for c in changes])
+check(kinds[("gone", "직접 넣은 수업")]["on"] is False, "门户에 없는 수업 지우기는 기본으로 체크 안 됨")
+app.apply_changes([kinds[("gone", "직접 넣은 수업")]])
+tt = json.load(open(deskcal.TT_FILE, encoding="utf-8"))
+check("2-6" not in tt and tt["0-1"]["room"] == "理教107", "고른 것만 적용 (강의실 변경은 안 고름)")
+check(app.pku_changes(resp)[0] == [] or all(c["kind"] != "set" for c in app.pku_changes(resp)[0]),
+      "이미 같으면 바꿀 수업이 없음")
+demo = os.path.join(d, "demo.json")
+json.dump(moved, open(demo, "w", encoding="utf-8"), ensure_ascii=False)
+app.conf["pku_import_file"] = demo
+_real_isop_conf = app.isop_conf
+app.isop_conf = lambda: None            # ISOP 미설정 상태로 두고 파일 가져오기 경로만 확인
+app.import_pku()
+app.isop_conf = _real_isop_conf
+check(getattr(app, "_review", None) is not None and app._review.winfo_exists(),
+      "설정된 课表 파일이 있으면 확인 창을 띄움")
+app._review.destroy()
+del app.conf["pku_import_file"]
+
+page = '<table><tr><td id="mon1"><div><span>%s</span></div></td><td id="tue3"></td></tr></table>' \
+    % resp["course"][0]["mon"]["courseName"]
+check(deskcal.parse_pku_table(deskcal.parse_pku_html(page))[0].keys() == {(0, 1)},
+      "저장한 门户 课表 페이지(html)도 읽음")
 
 # 같은 색 일정이 여러 개여도 일정마다 점, 넘치면 +N
 many_day = dt.date(2027, 1, 12)
@@ -748,7 +821,7 @@ def cell_items(day):
     return [i for i in app.cal.find_overlapping(x0 + 1, y0 + 1, x0 + app.cw - 1, y0 + app.ch - 1)]
 
 
-dots = [i for i in cell_items(many_day) if app.cal.type(i) == "oval"]
+dots = [i for i in cell_items(many_day) if "dot" in app.cal.gettags(i)]
 check(len(dots) == 3, "같은 색 일정 3개면 점 3개 (%d개)" % len(dots))
 app.events[deskcal.key_of(many_day)] *= 4                  # 12개
 app.render()
@@ -957,6 +1030,34 @@ deskcal.win_class = lambda h: "Shell_TrayWnd"
 app.sync_z()
 check(app._z == "showdesk" and app._topmost, "작업표시줄 클릭으로 바탕화면이 덮었을 때 자동 감지하여 맨 위로 올림")
 
+# 바탕화면 파일 우클릭: 탐색기가 띄운 메뉴는 '다른 앱'이 아니다 (예전엔 위젯이 바탕화면 밑으로 사라짐)
+app.is_covered_by_desktop = lambda: None
+app.is_below = lambda h: False
+app._shell_pid = (time.time(), 4321)              # 탐색기 프로세스 번호를 고정
+orig_win_pid = deskcal.win_pid
+deskcal.win_pid = lambda h: 4321 if h == 99999 else 1
+for cls in ("#32768", "Microsoft.UI.Content.PopupWindowSiteBridge"):
+    app._z, app._topmost = "showdesk", True
+    deskcal.win_class = lambda h, c=cls: c
+    app.sync_z()
+    check(app._z == "showdesk", "탐색기 우클릭 메뉴(%s)가 떠도 바탕화면 보기 유지" % cls)
+deskcal.win_class = lambda h: "CabinetWClass"
+app.sync_z()
+check(app._z == "bottom", "탐색기 폴더 창이 앞에 오면 바탕화면 보기를 끝냄")
+deskcal.win_pid = orig_win_pid
+
+# 맨 밑으로 내렸는데 바탕화면이 덮고 있으면, 그 밑이 아니라 바탕화면 바로 위에 둔다
+calls = []
+deskcal.user32.SetWindowPos = lambda *a: calls.append(a[1]) or 1
+orig_GetWindow = deskcal.user32.GetWindow
+deskcal.user32.GetWindow = lambda h, rel: 55555 if (h, rel) == (88888, deskcal.GW_HWNDPREV) else 0
+app.is_covered_by_desktop = lambda: 88888
+app._z, app._topmost = "showdesk", False
+app.lower_to_desktop(why="test")
+check(calls and calls[-1] == 55555 and app._z == "bottom",
+      "바탕화면이 위에 있으면 맨 밑 대신 바탕화면 바로 위로 (%r)" % calls)
+deskcal.user32.GetWindow = orig_GetWindow
+
 deskcal.user32.GetForegroundWindow = orig_GetForegroundWindow
 deskcal.win_class = orig_win_class
 deskcal.user32.IsWindowVisible = orig_IsWindowVisible
@@ -964,6 +1065,7 @@ deskcal.is_cloaked = orig_is_cloaked
 deskcal.user32.SetWindowPos = orig_SetWindowPos
 app.destroy()
 
+# ------------------------------------------------------------------
 # ------------------------------------------------------------------
 section("주말 시간표 토글 (5일 / 7일)")
 app, d = fresh()
@@ -1005,6 +1107,130 @@ check(deskcal.default_data_dir() == os.path.join(os.environ["LOCALAPPDATA"], "De
       "exe 는 %LOCALAPPDATA%\\DeskCal 에 저장")
 deskcal.FROZEN = False
 check(deskcal.default_data_dir() == os.path.join(deskcal.HERE, "data"), "스크립트는 옆 data 폴더")
+
+# ------------------------------------------------------------------
+section("ISOP 가져오기: 요일·교시 읽기 · 못 넣은 과목 알리기 (이슈 #1)")
+check(deskcal.isop_day("1") == 0 and deskcal.isop_day("周三") == 2 and deskcal.isop_day("星期日") == 6,
+      "요일: 숫자·周三·星期日 모두 읽음")
+check(deskcal.isop_day("8") is None and deskcal.isop_day("") is None, "요일: 범위 밖·빈 값은 못 읽음")
+check(deskcal.isop_periods("3", "4") == (3, 4) and deskcal.isop_periods("第10节", "第11节") == (10, 11)
+      and deskcal.isop_periods("3-4", "") == (3, 4), "교시: 숫자·第N节·'3-4' 모두 읽음")
+check(deskcal.isop_periods("19:10", "20:40") is None and deskcal.isop_periods("", "") is None,
+      "교시: 시각 형식·빈 값은 못 읽음")
+J = lambda xq, a, b: {"xq": xq, "kssj": a, "jssj": b, "skjs": "理教107", "dsz": "每周"}
+diag = {"flag": True, "list": [
+    {"kcmc": "信息管理概论", "ksap": [], "jsap": [J("2", "3", "4")]},
+    {"kcmc": "经济学原理", "ksap": [], "jsap": []},                          # 시간 정보 없음
+    {"kcmc": "高等数学（B）", "ksap": [], "jsap": [J("", "19:10", "20:40")]},  # 못 읽는 형식
+]}
+check(deskcal.isop_unscheduled(diag) == ["经济学原理", "高等数学（B）"], "시간을 못 읽은 과목 이름을 모음")
+app, d = fresh()
+shown = []
+orig_notice = deskcal.DeskCal.notice
+deskcal.DeskCal.notice = lambda self, msg: shown.append(msg)
+app.apply_changes(app.pku_changes(diag)[0])          # 읽을 수 있는 과목은 먼저 넣어 둔다
+app.review_pku(diag)
+deskcal.DeskCal.notice = orig_notice
+check(shown and app.t("pku_received", n=3) in shown[-1] and "经济学原理" in shown[-1]
+      and "高等数学（B）" in shown[-1],
+      "'같아요' 안내에도 받은 과목 수와 못 넣은 과목을 알림: %r" % (shown[-1:] or None))
+app.destroy()
+
+
+print("\n== 일정 시간 · 반복 · 기간 · 내보내기 · 새 버전 ==")
+for text, want in [
+        ("치과 3pm", ("치과", "15:00")), ("회의 오후 3시 30분", ("회의", "15:30")),
+        ("3시 회의", ("회의", "15:00")), ("下午3点开会", ("开会", "15:00")),
+        ("10:30 standup", ("standup", "10:30")), ("run 6am", ("run", "06:00")),
+        ("수학 3장", ("수학 3장", "")), ("5678", ("5678", "")), ("3pm", ("3pm", "")),
+        ("Room 101", ("Room 101", "")), ("3시 30명 회의", ("30명 회의", "15:00"))]:
+    check(deskcal.split_time(text) == want, "제목에서 시간 떼기: %r → %r" % (text, deskcal.split_time(text)))
+D = dt.date
+wk = {"title": "club", "start": "2026-11-11", "repeat": "weekly", "skip": ["2026-11-18"],
+      "until": "2026-12-02"}
+check(deskcal.series_on(wk, D(2026, 11, 11)) and not deskcal.series_on(wk, D(2026, 11, 18))
+      and deskcal.series_on(wk, D(2026, 11, 25)) and not deskcal.series_on(wk, D(2026, 12, 9))
+      and not deskcal.series_on(wk, D(2026, 11, 12)), "매주 반복: 뺀 날·끝나는 날을 지킴")
+check(deskcal.series_on({"start": "2026-11-11", "repeat": "biweekly"}, D(2026, 11, 25))
+      and not deskcal.series_on({"start": "2026-11-11", "repeat": "biweekly"}, D(2026, 11, 18)),
+      "격주 반복")
+rg = {"title": "trip", "start": "2026-11-20", "end": "2026-11-24"}
+check(deskcal.series_on(rg, D(2026, 11, 22)) and not deskcal.series_on(rg, D(2026, 11, 25)),
+      "기간 일정은 시작~끝 날 모두에 있음")
+check(deskcal.series_next(wk, D(2026, 11, 12)) == D(2026, 11, 25), "다음 반복 날은 뺀 날을 건너뜀")
+check(deskcal.version_tuple("v1.2.10") > deskcal.version_tuple("1.2.9"), "버전 비교는 숫자로")
+
+app, d = fresh(conf={"lang": "en"})
+app.update()
+app.entry_w.insert(0, "Dentist 3pm")
+app.add()
+check(app.items_today()[-1].get("time") == "15:00" and app.items_today()[-1]["title"] == "Dentist 3pm",
+      "새 일정: 제목은 적은 그대로, 시간은 따로 읽어 둠")
+app.cycle_repeat()
+app.entry_w.insert(0, "Club 7pm")
+app.add()
+check(len(app.series) == 1 and app.series[0]["repeat"] == "weekly" and app.repeat == ""
+      and os.path.exists(os.path.join(d, "series.json")), "반복 일정은 규칙 하나로 저장")
+nxt = app.today + dt.timedelta(days=7)
+app.toggle_series_done(0, nxt)
+check(deskcal.series_done(app.series[0], nxt) and not deskcal.series_done(app.series[0], app.today),
+      "반복 일정의 완료는 날짜별")
+app.undo()
+check(not deskcal.series_done(app.series[0], nxt), "Ctrl+Z 가 반복 일정도 되돌림")
+app.select(app.today + dt.timedelta(days=2))
+app.range_to = app.today + dt.timedelta(days=5)
+app.render()
+app.entry_w.insert(0, "Trip")
+app.add()
+check(len(app.series) == 2 and app.series[1].get("end") == deskcal.key_of(app.today + dt.timedelta(days=5))
+      and app.range_to is None, "Shift+클릭 기간 → 기간 일정 하나")
+names = [r[1] for r in app.upcoming_rows()]
+check(names.count("Trip") == 1 and names.count("Club 7pm") == 1, "다가오는 일정에는 반복·기간 일정이 한 줄씩")
+app.select(app.today)
+app.show_upcoming()
+app.update()
+check(app.panel_mode == "upcoming" and app._scroll is not None, "다가오는 일정 전체 보기")
+app.menu()
+app.update()
+labels = [w.cget("text") for w in walk(app.panel, []) if w.winfo_class() == "Label"]
+check(app.panel_mode == "settings" and "Settings" in labels and "Compact" in labels, "≡ 는 설정 패널을 엶")
+app.set_theme("light")
+check(app.panel_mode == "settings", "테마를 바꿔도 설정 패널이 열려 있음")
+app.menu()
+check(app.panel_mode == "day", "≡ 를 다시 누르면 닫힘")
+shell = app.shell
+app.set_compact()
+app.update()
+check(app.compact and app.shell is shell and app.w() == int(deskcal.COMPACT[0] * app.dpi),
+      "컴팩트 모드 (창을 새로 만들지 않고 크기만 바꿈)")
+app.set_size(3)
+app.update()
+check(not app.compact and len(app.cal.find_withtag("preview")) >= 1, "큰 크기에서는 칸에 일정 제목을 적음")
+app.set_size(2)
+app.update()
+check(not app.cal.find_withtag("preview"), "보통 크기에서는 점으로 표시")
+ics = deskcal.build_ics(app.events, app.series, app.courses, app.tt, app.periods, app.anchor(),
+                        app.today, lambda k: app.t("exam_" + k))
+check(ics.startswith("BEGIN:VCALENDAR\r\n") and ics.count("BEGIN:VEVENT") == 3
+      and "RRULE:FREQ=WEEKLY" in ics and "SUMMARY:Dentist" in ics
+      and all(len(l.encode("utf-8")) <= 75 for l in ics.split("\r\n")), ".ics 내보내기")
+zpath = app.export_backup(os.path.join(d, "b.zip"))
+n_ev, n_sr = len(app.events), len(app.series)
+app.events.clear()
+app.series[:] = []
+app.save()
+app.save_series()
+check(app.import_backup(zpath, ask=False) and len(app.events) == n_ev and len(app.series) == n_sr,
+      "백업 내보내기 → 가져오기로 일정이 돌아옴")
+check(any(f.startswith("before-restore-") for f in os.listdir(d)), "가져오기 전 데이터를 따로 남김")
+check(deskcal.read_backup(os.path.join(d, "events.json")) is None, "백업이 아닌 파일은 거절")
+app.apply_latest("99.0.0")
+check(app.update_ver == "99.0.0", "새 버전이 있으면 알림")
+app.apply_latest(deskcal.__version__)
+check(app.update_ver is None, "같은 버전이면 알림 없음")
+app.apply_latest("")
+check(app.update_ver is None, "확인에 실패해도 조용히 넘어감")
+app.destroy()
 
 # ------------------------------------------------------------------
 n_fail = RESULTS.count(False)

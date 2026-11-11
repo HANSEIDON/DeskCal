@@ -1,5 +1,58 @@
 # Changelog
 
+## 1.3.0 — 2026-11-11
+
+### Added
+
+- **Event times.** Type the time with the title ("Dentist 3pm", "회의 오후 3시", "下午3点开会") and
+  DeskCal reads the time from it and sorts the day's events by time. The title stays as typed.
+- **Repeating events.** Click **↻** next to the color chips to make a new event weekly,
+  every 2 weeks or monthly. Deleting asks whether to remove just that day or all following.
+- **Multi-day events.** Click the first day, Shift+click the last day, then type. The event
+  shows as a thin bar across those days.
+- **All upcoming items.** Click the **Upcoming** title to see the whole list, grouped into
+  this week, next week and later.
+- **Compact mode** (**⚙ → Size → Compact**): a small window with today's classes, events and
+  upcoming items, without the calendar grid.
+- **Event titles on the calendar** at the two largest sizes, instead of dots.
+- **Export.** **⚙ → Export .ics** writes a file that Google Calendar, Outlook and Apple
+  Calendar can import (events, exams and weekly classes). **Export / Import backup** moves
+  everything to another computer in one file.
+- **Update notice.** Once a day DeskCal asks GitHub for the latest version number. When
+  there is a newer one, a dot appears on **⚙** with a download button in settings. Nothing
+  is sent, and you can turn it off in settings.
+- Scroll the mouse wheel over the calendar to change month.
+
+### Changed
+
+- **Settings open inside the widget** (click **⚙** or right-click) instead of a pop-up menu.
+  The **≡** button is now a **⚙** that stays lit while settings are open.
+- Click an item in **Upcoming** to jump to its date.
+
+### Fixed
+
+- Right-clicking the desktop no longer sends the widget under the desktop.
+- Dragging the widget is smoother.
+- Switching between Calendar and Timetable no longer stutters or flickers. The widget used
+  to rebuild itself and re-read the desktop on every switch.
+- Changing theme, size or language no longer flashes a blank widget.
+- The circle around today's date, event dots and checkboxes now have smooth edges.
+- Dropping the widget after a drag no longer flashes while its colors adjust to the new spot.
+- Text typed into the new-event box is kept when you tick, delete or recolor another event.
+- The ISOP import now tells you which courses could not be placed on the timetable.
+
+## 1.2.1 — 2026-10-28
+
+### Added
+
+- **Weekend timetable.** Turn on **≡ → Show Weekend (Sat/Sun)** for a 7-day (Mon–Sun) timetable. Importing
+  a PKU timetable with weekend classes switches it on automatically.
+
+### Fixed
+
+- The widget stays visible when *Show desktop* is clicked on the taskbar.
+- Changing a course in the timetable keeps its exam dates on the calendar in sync.
+
 ## 1.2.0 — 2026-10-26
 
 ### Added

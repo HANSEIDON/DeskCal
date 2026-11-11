@@ -4,7 +4,11 @@ import calendar
 import ctypes
 import datetime as dt
 import glob
+import hashlib
+import hmac
+import html
 import json
+import math
 import os
 import queue
 import re
@@ -17,12 +21,17 @@ import time
 import traceback
 import tkinter as tk
 import tkinter.font as tkfont
+import urllib.parse
+import urllib.request
 import winreg
+import zipfile
+import zlib
+from tkinter import filedialog
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 FROZEN = getattr(sys, "frozen", False) or "__compiled__" in globals()   # exe(Nuitka/PyInstaller)
-RES_DIR = getattr(sys, "_MEIPASS", HERE)        # 함께 묶인 파일(글꼴)이 있는 곳
+RES_DIR = getattr(sys, "_MEIPASS", HERE)        # 함께 묶인 파일(글꼴·seeds)이 있는 곳
 
 
 def default_data_dir():
@@ -400,6 +409,66 @@ def round_rect(c, x0, y0, x1, y1, r, **kw):
     return c.create_polygon(pts, smooth=True, **kw)
 
 
+def disc_png(d, color):
+    """지름 d 픽셀짜리 원을 가장자리가 부드러운 RGBA PNG 로 만든다.
+    Tk 캔버스의 create_oval 은 가장자리를 다듬지 않아 작은 원이 계단져 보인다."""
+    r, g, b = rgb(color)
+    rad = d / 2.0
+    rows = bytearray()
+    for y in range(d):
+        rows.append(0)
+        for x in range(d):
+            dist = ((x + 0.5 - rad) ** 2 + (y + 0.5 - rad) ** 2) ** 0.5
+            a = min(1.0, max(0.0, rad - dist + 0.5))
+            rows += bytes((r, g, b, int(a * 255 + 0.5)))
+
+    def chunk(tag, data):
+        return (struct.pack(">I", len(data)) + tag + data
+                + struct.pack(">I", zlib.crc32(tag + data) & 0xffffffff))
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", d, d, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(rows))) + chunk(b"IEND", b""))
+
+
+def _png(w, h, rows):
+    def chunk(tag, data):
+        return (struct.pack(">I", len(data)) + tag + data
+                + struct.pack(">I", zlib.crc32(tag + data) & 0xffffffff))
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(rows))) + chunk(b"IEND", b""))
+
+
+def gear_png(d, color, teeth=6):
+    """d 픽셀짜리 톱니바퀴 아이콘 (RGBA PNG). 톱니 6개, 가운데 구멍 하나.
+    픽셀마다 4x4 로 나눠 덮인 비율을 재서 가장자리를 부드럽게 한다."""
+    r, g, b = rgb(color)
+    c = d / 2.0
+    r_out, r_body, r_hole = d * 0.47, d * 0.35, d * 0.15
+    step = 2 * math.pi / teeth
+    rows = bytearray()
+    for y in range(d):
+        rows.append(0)
+        for x in range(d):
+            hit = 0
+            for sy in range(4):
+                for sx in range(4):
+                    dx, dy = x + (sx + 0.5) / 4 - c, y + (sy + 0.5) / 4 - c
+                    dist = (dx * dx + dy * dy) ** 0.5
+                    if dist < r_hole or dist > r_out:
+                        continue
+                    if dist <= r_body:
+                        hit += 1
+                        continue
+                    # 톱니: 바깥으로 갈수록 조금 좁아지는 사다리꼴
+                    a = (math.atan2(dy, dx) + step / 2) % step - step / 2
+                    half = step * (0.30 - 0.08 * (dist - r_body) / (r_out - r_body))
+                    if abs(a) <= half:
+                        hit += 1
+            rows += bytes((r, g, b, int(hit * 255 / 16.0 + 0.5)))
+    return _png(d, d, rows)
+
+
 # ---------- 글꼴 ----------
 # 한 글자라도 폰트에 없으면 Tk 가 다른 폰트에서 빌려 와 한 단어 안에 모양이
 # 섞인다. 맑은 고딕은 간체자(网·络·传…)가, YaHei 는 한글이 없다.
@@ -438,6 +507,20 @@ def pick_font(root, lang):
 TEXT = {
     "ko": {
         "lang_name": "한국어",
+        "settings": "설정", "compact": "컴팩트", "close": "닫기",
+        "rep_none": "반복 없음", "rep_weekly": "매주", "rep_biweekly": "격주", "rep_monthly": "매월",
+        "tip_repeat": "반복 (누르면 바뀌어요). 여러 날 일정은 달력에서 마지막 날을 Shift+클릭하세요.",
+        "n_days": "{n}일간",
+        "del_this": "이 날만", "del_after": "이 날부터 전부",
+        "up_this_week": "이번 주", "up_next_week": "다음 주", "up_later": "그 이후",
+        "tip_upcoming": "전체 보기",
+        "upd_check": "새 버전 확인 (하루 한 번)", "upd_get": "DeskCal {v} 받기",
+        "export_ics": ".ics 내보내기 (Google · Outlook · Apple)",
+        "backup_out": "백업 내보내기", "backup_in": "백업 가져오기",
+        "backup_confirm": "지금의 일정·시간표·설정을 이 백업으로 바꿀까요?\n지금 데이터는 먼저 따로 저장해 두고, Ctrl+Z 로도 되돌릴 수 있어요.",
+        "backup_bad": "DeskCal 백업 파일이 아니에요.", "backup_done": "백업을 불러왔어요.",
+        "restore": "바꾸기", "save_fail": "저장하지 못했어요.\n{why}",
+        "classes": "수업",
         "cal": "달력", "tt": "시간표", "today": "오늘",
         "month_title": "{y}년 {m}월",
         "tt_title": "시간표  ·  이번 주 {wk}",
@@ -488,13 +571,54 @@ TEXT = {
         "glass": "배경", "glass_soft": "유리 (은은하게)", "glass_clear": "유리 (선명하게)",
         "glass_off": "단색", "now": "지금", "next": "다음",
         "autostart": "윈도우 시작 시 실행",
+        "pku_import": "학교 课表 가져오기",
+        "pku_done": "{n}개 과목 · {c}칸을 가져왔어요{extra}\n색·이름은 지금처럼 고칠 수 있고, Ctrl+Z로 되돌릴 수 있어요.",
+        "pku_skipped": "\n(주말·겹친 수업 {k}개는 넣지 않았어요)",
+        "pku_received": "학교에서 받은 과목: {n}개",
+        "pku_unscheduled": "요일·교시를 읽지 못해 넣지 못한 과목 {n}개: {names}\n직접 추가해 주세요.",
+        "pku_empty": "가져올 수업을 찾지 못했어요.",
+        "isop_ask_user": "학번을 입력하세요.\n북대 메일로 인증번호를 보내드려요.",
+        "isop_ask_code": "북대 메일로 인증번호를 보냈어요.\n5분 안에 입력해 주세요.",
+        "isop_cooldown": "인증번호는 {s}초 뒤에 다시 요청할 수 있어요.",
+        "isop_daily_cap": "오늘은 이 학번으로 인증번호를 너무 여러 번 요청했어요 (하루 {n}회). 내일 다시 시도해 주세요.",
+        "isop_failed": "课表를 가져오지 못했어요.\n{why}",
+        "isop_net": "북대 서버에 연결하지 못했어요. 교외라면 VPN을 켜고 다시 시도해 주세요.",
+        "isop_got": "课表를 받았어요 (과목 {n}개).",
         "tip_check": "클릭해서 완료 표시 (다시 누르면 취소)",
+        "pku_up_to_date": "학교 课表와 같아요. 바꿀 곳이 없어요.",
+        "pku_review_title": "학교 课表와 다른 곳이 {n}개 있어요",
+        "pku_review_hint": "반영할 항목만 체크하세요. 반영한 뒤에도 Ctrl+Z로 되돌릴 수 있어요.",
+        "pku_applied": "시간표에 반영했어요 · Ctrl+Z로 되돌리기",
+        "periods_fmt": "{wd} {a}{b}교시",
+        "chg_new": "새 수업: {t} ({cells})",
+        "chg_gone": "门户에 없는 수업 지우기: {t} ({cells})",
+        "chg_time": "시간 {a} → {b}",
+        "chg_room": "강의실 {a} → {b}",
+        "chg_week": "주차 {a} → {b}",
+        "chg_detail": "칸별 강의실·주차 변경",
+        "chg_exam_new": "期末 날짜 추가: {t} · {d} {tm}",
+        "chg_exam_diff": "期末 날짜 바꾸기: {t} · {a} → {b}",
         "sel_all": "전체 선택", "sel_none": "선택 해제",
         "apply_sel": "반영하기", "cancel": "취소", "ok": "확인",
+        "pku_paused": "북대 门户에서 시간표 가져오기는 지금은 지원하지 않아요.\n\n학교 측의 정식 허가를 기다리고 있어요. 허가가 나면 업데이트로 다시 제공할게요.\n그동안은 시간표 칸을 눌러 직접 입력해 주세요.",
         "open_data": "데이터 폴더 열기", "quit": "종료",
     },
     "en": {
         "lang_name": "English",
+        "settings": "Settings", "compact": "Compact", "close": "Close",
+        "rep_none": "Once", "rep_weekly": "Weekly", "rep_biweekly": "Biweekly", "rep_monthly": "Monthly",
+        "tip_repeat": "Repeat (click to change). For a multi-day event, Shift+click the last day on the calendar.",
+        "n_days": "{n} days",
+        "del_this": "This day only", "del_after": "This and following",
+        "up_this_week": "This week", "up_next_week": "Next week", "up_later": "Later",
+        "tip_upcoming": "Show all",
+        "upd_check": "Check for updates (once a day)", "upd_get": "Download DeskCal {v}",
+        "export_ics": "Export .ics (Google · Outlook · Apple)",
+        "backup_out": "Export backup", "backup_in": "Import backup",
+        "backup_confirm": "Replace your events, timetable and settings with this backup?\nYour current data is saved separately first, and Ctrl+Z also undoes it.",
+        "backup_bad": "This file isn't a DeskCal backup.", "backup_done": "Backup restored.",
+        "restore": "Replace", "save_fail": "Couldn't save.\n{why}",
+        "classes": "Classes",
         "cal": "Calendar", "tt": "Timetable", "today": "Today",
         "month_title": "{month} {y}",
         "tt_title": "Timetable  ·  {wk}",
@@ -546,13 +670,54 @@ TEXT = {
         "glass": "Background", "glass_soft": "Glass (subtle)", "glass_clear": "Glass (clear)",
         "glass_off": "Solid", "now": "Now", "next": "Next",
         "autostart": "Start with Windows",
+        "pku_import": "Import school timetable",
+        "pku_done": "Imported {n} courses, {c} periods.{extra}\nYou can still edit colors and names. Ctrl+Z undoes the import.",
+        "pku_skipped": "\n({k} weekend or overlapping classes were left out.)",
+        "pku_received": "Courses received from school: {n}",
+        "pku_unscheduled": "{n} course(s) had no readable day/period and were not added: {names}\nPlease add them by hand.",
+        "pku_empty": "No classes were found.",
+        "isop_ask_user": "Enter your student ID.\nWe'll send a verification code to your PKU email.",
+        "isop_ask_code": "We sent a code to your PKU email.\nEnter it within 5 minutes.",
+        "isop_cooldown": "You can request another code in {s} seconds.",
+        "isop_daily_cap": "This ID has requested too many codes today (max {n}). Try again tomorrow.",
+        "isop_failed": "Couldn't get your timetable.\n{why}",
+        "isop_net": "Couldn't reach the PKU server. Off campus? Turn on the VPN and try again.",
+        "isop_got": "Timetable received ({n} courses).",
         "tip_check": "Click to mark as done (click again to undo)",
+        "pku_up_to_date": "Your timetable is already up to date.",
+        "pku_review_title": "{n} changes from your school timetable",
+        "pku_review_hint": "Tick the ones to apply. Ctrl+Z still undoes them afterwards.",
+        "pku_applied": "Timetable updated · Ctrl+Z to undo",
+        "periods_fmt": "{wd} P{a}{b}",
+        "chg_new": "New class: {t} ({cells})",
+        "chg_gone": "Remove class not in the portal: {t} ({cells})",
+        "chg_time": "time {a} → {b}",
+        "chg_room": "room {a} → {b}",
+        "chg_week": "weeks {a} → {b}",
+        "chg_detail": "room or weeks changed in some periods",
+        "chg_exam_new": "Add final date: {t} · {d} {tm}",
+        "chg_exam_diff": "Change final date: {t} · {a} → {b}",
         "sel_all": "Select all", "sel_none": "Clear all",
         "apply_sel": "Update selected", "cancel": "Cancel", "ok": "OK",
+        "pku_paused": "Importing from the PKU portal isn't available right now.\n\nWe're waiting for official permission from the university. Once it's approved, the import will return in an update.\nUntil then, click a cell in the timetable to add classes by hand.",
         "open_data": "Open data folder", "quit": "Quit",
     },
     "zh": {
         "lang_name": "中文",
+        "settings": "设置", "compact": "紧凑", "close": "关闭",
+        "rep_none": "不重复", "rep_weekly": "每周", "rep_biweekly": "每两周", "rep_monthly": "每月",
+        "tip_repeat": "重复（点击切换）。多日日程：在日历上按住 Shift 点击最后一天。",
+        "n_days": "共{n}天",
+        "del_this": "仅这一天", "del_after": "此日及以后",
+        "up_this_week": "本周", "up_next_week": "下周", "up_later": "以后",
+        "tip_upcoming": "查看全部",
+        "upd_check": "检查更新（每天一次）", "upd_get": "下载 DeskCal {v}",
+        "export_ics": "导出 .ics（Google · Outlook · Apple）",
+        "backup_out": "导出备份", "backup_in": "导入备份",
+        "backup_confirm": "用这份备份替换现在的日程、课表和设置吗？\n当前数据会先另存一份，也可以用 Ctrl+Z 撤销。",
+        "backup_bad": "这不是 DeskCal 的备份文件。", "backup_done": "已恢复备份。",
+        "restore": "替换", "save_fail": "保存失败。\n{why}",
+        "classes": "课程",
         "cal": "日历", "tt": "课表", "today": "今天",
         "month_title": "{y}年{m}月",
         "tt_title": "课表  ·  本周{wk}",
@@ -602,9 +767,36 @@ TEXT = {
         "glass": "背景", "glass_soft": "毛玻璃（柔和）", "glass_clear": "毛玻璃（清透）",
         "glass_off": "纯色", "now": "现在", "next": "下节",
         "autostart": "开机自动启动",
+        "pku_import": "导入学校课表",
+        "pku_done": "已导入 {n} 门课、{c} 节。{extra}\n颜色和名称仍可修改，Ctrl+Z 可撤销导入。",
+        "pku_skipped": "\n（周末或时间冲突的 {k} 门课未导入）",
+        "pku_received": "从学校获取到 {n} 门课",
+        "pku_unscheduled": "有 {n} 门课缺少可读取的星期/节次信息，未能导入：{names}\n请手动添加。",
+        "pku_empty": "没有找到课程。",
+        "isop_ask_user": "请输入学号。\n验证码将发送到你的北大邮箱。",
+        "isop_ask_code": "验证码已发送到你的北大邮箱，\n请在 5 分钟内输入。",
+        "isop_cooldown": "请 {s} 秒后再请求验证码。",
+        "isop_daily_cap": "该学号今天请求验证码次数过多（每日 {n} 次），请明天再试。",
+        "isop_failed": "未能获取课表。\n{why}",
+        "isop_net": "无法连接北大服务器。如在校外，请连接 VPN 后重试。",
+        "isop_got": "已获取课表（{n} 门课）。",
         "tip_check": "点击标记完成（再点一次取消）",
+        "pku_up_to_date": "当前课表与学校课表一致，无需更新。",
+        "pku_review_title": "与学校课表相比，有 {n} 处变化",
+        "pku_review_hint": "请勾选要更新的项目。更新后仍可按 Ctrl+Z 撤销。",
+        "pku_applied": "课表已更新 · Ctrl+Z 撤销",
+        "periods_fmt": "{wd} 第{a}{b}节",
+        "chg_new": "新课程：{t}（{cells}）",
+        "chg_gone": "删除门户中没有的课：{t}（{cells}）",
+        "chg_time": "时间 {a} → {b}",
+        "chg_room": "教室 {a} → {b}",
+        "chg_week": "周次 {a} → {b}",
+        "chg_detail": "部分节次的教室或周次有变",
+        "chg_exam_new": "添加期末日期：{t} · {d} {tm}",
+        "chg_exam_diff": "修改期末日期：{t} · {a} → {b}",
         "sel_all": "全选", "sel_none": "取消全选",
         "apply_sel": "更新所选", "cancel": "取消", "ok": "确定",
+        "pku_paused": "从北大门户导入课表功能目前暂不支持。\n\n正在等待学校的正式许可，获批后会通过更新重新提供。\n在此之前，请点击课表格子手动添加课程。",
         "open_data": "打开数据文件夹", "quit": "退出",
     },
 }
@@ -674,6 +866,7 @@ WIN_TITLE = "DeskCal"
 GWL_EXSTYLE, WS_EX_TOOLWINDOW = -20, 0x80
 HWND_TOP, HWND_BOTTOM, HWND_TOPMOST, HWND_NOTOPMOST = 0, 1, -1, -2
 GW_HWNDNEXT = 2
+GW_HWNDPREV = 3
 SWP_KEEP = 0x0001 | 0x0002 | 0x0010     # NOSIZE | NOMOVE | NOACTIVATE
 SWP_SHOW = 0x0001 | 0x0002 | 0x0040     # NOSIZE | NOMOVE | SHOWWINDOW
 SW_SHOWNOACTIVATE = 4
@@ -686,6 +879,11 @@ DESK_SHELL_CLASSES = (
     "XamlExplorerHostIslandWindow",
 )   # 바탕화면 및 윈도우 셸 UI 관련 창
 DESK_CLASSES = DESK_SHELL_CLASSES
+# 탐색기가 잠깐 띄우는 메뉴(바탕화면 파일 우클릭 메뉴 등). 이게 앞에 와도 다른 앱으로
+# 돌아간 게 아니다. Windows 11 새 메뉴는 버전마다 클래스 이름이 달라서, 클래스 대신
+# '탐색기 프로세스가 띄운 창인가'로 본다 (is_shell_ui).
+SHELL_MENU_CLASSES = ("#32768",)                                   # 클래식 팝업 메뉴
+EXPLORER_APP_CLASSES = ("CabinetWClass", "ExploreWClass", "#32770")  # 폴더 창·속성 창은 앱 창
 
 
 _CLASS_BUF = ctypes.create_unicode_buffer(64)
@@ -775,6 +973,271 @@ def set_autostart(on):
         log("윈도우 시작 시 실행: %s" % ("켬" if on else "끔"))
     except OSError:
         log("윈도우 시작 시 실행 설정 실패:\n" + traceback.format_exc())
+
+
+# ---------- 북대 课表 읽기 ----------
+# 门户에서 가져오기는 학교 허가를 기다리며 멈춰 두었다 (계산센터: 다른 앱의 통합 로그인
+# 등록을 빌려 쓰면 안 된다). 아래는 课表 형식을 읽고 시간표에 합치는 부분으로, 허가를
+# 받아 공식 경로로 다시 열 때 그대로 쓴다. 课表 한 칸(courseName)의 형식:
+#   과목명(主)<br>上课信息：1-16周 每周 三教305  教师：…  备注：…<br>考试信息：20261230 星期三 下午
+PKU_WEEKS = {"每周": "all", "单周": "odd", "双周": "even"}
+PKU_DAYS = ["mon", "tue", "wed", "thu", "fri"]
+PLACE_HINT = re.compile(r"(场|馆|楼|教|室|中心|院)")
+
+
+def parse_pku_cell(cell):
+    """门户 课表 한 칸의 HTML → [{title, room, week, exam}] (한 칸에 여러 과목일 수 있다)."""
+    text = html.unescape(re.sub(r"<[^>]+>", "", re.sub(r"<br\s*/?>", "\n", cell or "")))
+    out, cur = [], None
+    for line in (ln.strip() for ln in text.split("\n")):
+        if not line:
+            continue
+        if line.startswith("上课信息"):
+            if cur is None:
+                continue
+            info = line.split("：", 1)[-1]
+            note = info.split("备注：", 1)[1].strip() if "备注：" in info else ""
+            m = re.search(r"(每周|单周|双周)\s*(.*)", re.split(r"教师[：:]", info)[0])
+            if m:
+                cur["week"], cur["room"] = PKU_WEEKS[m.group(1)], m.group(2).strip()
+            if not cur["room"] and note and PLACE_HINT.search(note.split()[0]):
+                cur["room"] = note.split()[0]          # 예: 备注：五四网球场  自带球拍
+        elif line.startswith("考试信息"):
+            m = re.search(r"(\d{4})(\d\d)(\d\d)(?:\s*星期.)?\s*(\S*)", line.split("：", 1)[-1])
+            if cur is not None and m:
+                cur["exam"] = ("%s-%s-%s" % m.group(1, 2, 3), m.group(4))
+        else:
+            cur = {"title": re.sub(r"\((主|辅)\)$", "", line).strip(), "room": "",
+                   "week": "all", "exam": None}
+            out.append(cur)
+    return [c for c in out if c["title"]]
+
+
+# 북대 数据共享开放服务平台(ISOP) — 정식 등록한 앱으로 본인 课表를 받는다.
+# 앱 KEY·비밀 키는 data/isop.json 에만 둔다 (공개 저장소·배포판에 넣지 않는다).
+ISOP_BASE = "https://isop.pku.edu.cn/svcpub/svc"
+ISOP_SVC = "STUDENT_COURSE_TABLE_ROOM"
+ISOP_FILE = os.path.join(APP_DIR, "isop.json")
+ISOP_THROTTLE_FILE = os.path.join(APP_DIR, "isop_throttle.json")
+ISOP_MAIL_COOLDOWN = 60          # 인증 메일 재요청 최소 간격(초)
+ISOP_MAIL_DAILY_CAP = 5          # 같은 학번으로 하루에 보낼 수 있는 인증 메일 수
+
+# --- ISOP native client & secret protection --------------------------------
+try:
+    import _isop_client
+    HAS_ISOP_CLIENT = True
+except ImportError:
+    _isop_client = None
+    HAS_ISOP_CLIENT = False
+
+
+def _dpapi_protect(data):
+    """Encrypt bytes with Windows DPAPI (per-user). Returns bytes."""
+    import ctypes.wintypes as wt
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wt.DWORD), ("pbData", wt.LPBYTE)]
+    buf = ctypes.create_string_buffer(data, len(data))
+    src = DATA_BLOB(len(data), ctypes.cast(buf, wt.LPBYTE))
+    dst = DATA_BLOB()
+    crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    crypt32.CryptProtectData.argtypes = [
+        ctypes.POINTER(DATA_BLOB), wt.LPCWSTR, ctypes.POINTER(DATA_BLOB),
+        wt.LPVOID, wt.LPVOID, wt.DWORD, ctypes.POINTER(DATA_BLOB)]
+    crypt32.CryptProtectData.restype = wt.BOOL
+    if not crypt32.CryptProtectData(ctypes.byref(src), None, None, None, None, 0,
+                                   ctypes.byref(dst)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    result = ctypes.string_at(dst.pbData, dst.cbData)
+    ctypes.windll.kernel32.LocalFree(dst.pbData)   # DPAPI 버퍼는 LocalAlloc → LocalFree
+    return result
+
+
+import ssl
+
+
+def isop_sign(pairs):
+    """MBA-protected C++ native MD5 digest (appSecret never exposed to Python)."""
+    if not HAS_ISOP_CLIENT:
+        raise RuntimeError("Secure ISOP module missing")
+    return _isop_client.sign(urllib.parse.urlencode(pairs))
+
+
+def isop_call(path, pairs, sort=False, timeout=15):
+    """Direct HTTPS call to ISOP endpoint bypassing untrusted CA or broken proxies."""
+    if sort:
+        pairs = sorted(pairs)
+    else:
+        pairs = list(pairs)
+    sig = isop_sign(pairs)
+    q = urllib.parse.urlencode(pairs + [("msg", sig)])
+    url = "%s/%s?%s" % (ISOP_BASE, path, q)
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DeskCal/1.2",
+            "Accept": "application/json, text/plain, */*",
+        }
+    )
+
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=timeout) as r:
+            raw = r.read().decode("utf-8", errors="replace")
+    except Exception as e_first:
+        try:
+            no_proxy_handler = urllib.request.ProxyHandler({})
+            opener = urllib.request.build_opener(no_proxy_handler, urllib.request.HTTPSHandler(context=ctx))
+            with opener.open(req, timeout=timeout) as r:
+                raw = r.read().decode("utf-8", errors="replace")
+        except Exception:
+            raise e_first
+
+    try:
+        return json.loads(raw)
+    except Exception:
+        raise RuntimeError(raw[:120] if raw else "Empty response from server")
+
+
+def _dpapi_unprotect(data):
+    """Decrypt DPAPI-protected bytes. Returns bytes."""
+    import ctypes.wintypes as wt
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wt.DWORD), ("pbData", wt.LPBYTE)]
+    buf = ctypes.create_string_buffer(data, len(data))
+    src = DATA_BLOB(len(data), ctypes.cast(buf, wt.LPBYTE))
+    dst = DATA_BLOB()
+    crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    crypt32.CryptUnprotectData.argtypes = [
+        ctypes.POINTER(DATA_BLOB), wt.LPWSTR, ctypes.POINTER(DATA_BLOB),
+        wt.LPVOID, wt.LPVOID, wt.DWORD, ctypes.POINTER(DATA_BLOB)]
+    crypt32.CryptUnprotectData.restype = wt.BOOL
+    if not crypt32.CryptUnprotectData(ctypes.byref(src), None, None, None, None, 0,
+                                     ctypes.byref(dst)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    result = ctypes.string_at(dst.pbData, dst.cbData)
+    ctypes.windll.kernel32.LocalFree(dst.pbData)   # DPAPI 버퍼는 LocalAlloc → LocalFree
+    return result
+
+
+
+
+
+def isop_client_ip():
+    """요청한 컴퓨터의 IP (V2 인증 API 가 요구한다)."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sk:
+            sk.connect(("162.105.120.174", 443))
+            return sk.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
+def isop_ok(resp):
+    """ISOP 课表 응답 성공 여부. 문서엔 'success' 라고 돼 있지만 실제로는 true 가 온다."""
+    return resp.get("flag") in (True, "success", "true")
+
+
+_ISOP_WD = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "日": 7, "天": 7}
+
+
+def isop_day(v):
+    """요일 값 '1'·'周一'·'星期一' → 0(월)…6(일). 못 읽으면 None."""
+    s = str(v if v is not None else "").strip()
+    if s.isdigit():
+        n = int(s)
+        return n - 1 if 1 <= n <= 7 else None
+    for ch in reversed(s):
+        if ch in _ISOP_WD:
+            return _ISOP_WD[ch] - 1
+    return None
+
+
+def isop_periods(a, b):
+    """교시 값 ('3','4') · ('第3节','第4节') · ('3-4','') → (3, 4). 시각('19:10')이나 빈 값은 None."""
+    txt = "%s %s" % (a if a is not None else "", b if b is not None else "")
+    if ":" in txt or "：" in txt:
+        return None
+    nums = [int(x) for x in re.findall(r"\d+", txt)]
+    if not nums:
+        return None
+    lo, hi = min(nums), max(nums)
+    lo, hi = max(lo, 1), min(hi, PERIODS)
+    return (lo, hi) if lo <= hi else None
+
+
+def isop_entries(c):
+    """과목 하나의 수업 시간들 [(요일 0~6, 시작 교시, 끝 교시, 원래 항목)]. 못 읽은 항목은 뺀다."""
+    out = []
+    for j in c.get("jsap") or []:
+        di, pr = isop_day(j.get("xq")), isop_periods(j.get("kssj"), j.get("jssj"))
+        if di is not None and pr:
+            out.append((di, pr[0], pr[1], j))
+    return out
+
+
+def isop_unscheduled(resp):
+    """학교에서 받았지만 요일·교시를 읽을 수 없어 시간표에 넣지 못한 과목 이름들."""
+    out = []
+    for c in resp.get("list") or []:
+        title = (c.get("kcmc") or "").strip()
+        if title and not isop_entries(c) and title not in out:
+            out.append(title)
+    return out
+
+
+def isop_slots(resp, n_days=N_DAYS):
+    """ISOP '个人课表及教室' 응답 → parse_pku_table 과 같은 ({(요일, 교시): [과목]}, 주말 수)."""
+    slots, weekend = {}, 0
+    for c in resp.get("list") or []:
+        title = (c.get("kcmc") or "").strip()
+        if not title:
+            continue
+        exam = None
+        for e in c.get("ksap") or []:            # 시험 일정: {'ksrq': '20270104', 'kssj': '晚上'}
+            d = e.get("ksrq") or ""
+            if len(d) == 8 and d.isdigit():
+                exam = ("%s-%s-%s" % (d[:4], d[4:6], d[6:]), e.get("kssj", ""))
+                break
+        for di, a, b, j in isop_entries(c):
+            if di >= n_days:
+                weekend += 1
+                continue
+            for p in range(a, b + 1):
+                slots.setdefault((di, p), []).append({
+                    "title": title, "room": (j.get("skjs") or "").strip(),
+                    "week": PKU_WEEKS.get((j.get("dsz") or "").strip(), "all"), "exam": exam})
+    return slots, weekend
+
+
+def parse_pku_html(text):
+    """门户 '我的课表' 페이지를 브라우저로 저장한 html → getCourseInfo.do 응답과 같은 모양."""
+    cells = dict(re.findall(r'<td[^>]*id="((?:mon|tue|wed|thu|fri|sat|sun)\d+)"[^>]*>(.*?)</td>',
+                            text, re.S))
+    return {"success": True,
+            "course": [{k: {"courseName": cells.get("%s%d" % (k, i), "")}
+                        for k in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")}
+                       for i in range(1, PERIODS + 1)]}
+
+
+def parse_pku_table(resp, n_days=N_DAYS):
+    """getCourseInfo.do 응답 → ({(요일, 교시): [과목…]}, 시간표에 못 넣은 수업 수(주말))."""
+    slots, weekend = {}, 0
+    all_pku_days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    days = all_pku_days[:n_days]
+    extra = all_pku_days[n_days:]
+    for i, row in enumerate((resp or {}).get("course") or [], 1):
+        for di, key in enumerate(days):
+            got = parse_pku_cell((row.get(key) or {}).get("courseName"))
+            if got and i <= PERIODS:
+                slots[(di, i)] = got
+        for key in extra:
+            weekend += len(parse_pku_cell((row.get(key) or {}).get("courseName")))
+    return slots, weekend
 
 
 # ---------- 파일 ----------
@@ -900,6 +1363,289 @@ def parse_periods(items):
     return out
 
 
+COMPACT = (320, 520)        # 컴팩트 모드의 창 크기 (100% 배율 기준)
+REPEATS = ["", "weekly", "biweekly", "monthly"]
+RELEASES_API = "https://api.github.com/repos/HANSEIDON/DeskCal/releases/latest"
+RELEASES_PAGE = "https://github.com/HANSEIDON/DeskCal/releases/latest"
+BACKUP_TYPES = {"events.json": dict, "series.json": list, "timetable.json": dict,
+                "courses.json": dict, "config.json": dict}
+
+
+def series_file():
+    return os.path.join(APP_DIR, "series.json")
+
+
+# ---------- 일정 제목에 적은 시간 ----------
+# 입력칸을 늘리지 않으려고 시간은 제목에 같이 적게 한다 ("치과 3pm"). 제목은 적은 그대로
+# 두고 ("2시 연습" 이 "연습" 이 되면 어색하다), 읽어 낸 시간만 따로 저장해 정렬·내보내기에
+# 쓴다. 분명한 표기만, 맨 앞이나 맨 뒤에 있을 때만 알아듣는다 ("수학 3장" 은 시간이 아니다).
+_MERID = r"(?:오전|오후|上午|下午|早上|晚上)"
+_MIN = r"(?:\d{1,2}(?:분|分)?|\s*\d{1,2}\s*(?:분|分)|\s*반|半)?"
+_TIME_TOKEN = (r"(?:" + _MERID + r"\s*\d{1,2}(?::\d{2}|(?:시|点|點)" + _MIN + r")"
+               r"|\d{1,2}(?:시|点|點)" + _MIN +
+               r"|\d{1,2}:\d{2}(?:\s*[ap]\.?m\.?)?"
+               r"|\d{1,2}\s*[ap]\.?m\.?)")
+_TIME_END = re.compile(r"^(.*?\S)(?:\s+|(?<=[^\x00-\x7f]))(" + _TIME_TOKEN + r")$", re.I)
+_TIME_START = re.compile(r"^(" + _TIME_TOKEN + r")(?:\s+|(?=[^\x00-\x7f]))(\S.*)$", re.I)
+_HAS_MERID = re.compile(_MERID + r"|[ap]\.?m", re.I)
+
+
+def split_time(text):
+    """'치과 3pm' → ('치과', '15:00'). 시간이 없으면 (원래 글, '')."""
+    text = (text or "").strip()
+    for rx, gi_title, gi_tok in ((_TIME_END, 1, 2), (_TIME_START, 2, 1)):
+        m = rx.match(text)
+        if not m:
+            continue
+        tok = m.group(gi_tok)
+        tm = parse_time(tok)
+        if not tm:
+            continue
+        # 오전·오후를 안 적은 1~6시는 오후로 본다 ("3시 회의" 는 새벽이 아니다)
+        if not _HAS_MERID.search(tok) and 1 <= int(tm[:2]) <= 6:
+            tm = "%02d%s" % (int(tm[:2]) + 12, tm[2:])
+        title = m.group(gi_title).strip(" ,·-–—@")
+        if title:
+            return title, tm
+    return text, ""
+
+
+def time_of(text):
+    """제목에 적힌 시간 ('15:00'). 없으면 ''."""
+    return split_time(text)[1]
+
+
+def extra_time(it):
+    """제목에 안 적혀 있어 따로 보여줘야 하는 시간 (제목에 있으면 '')."""
+    tm = it.get("time", "")
+    return tm if tm and time_of(it.get("title", "")) != tm else ""
+
+
+# ---------- 반복 · 기간 일정 ----------
+# 날짜마다 복사하지 않고 규칙 하나만 저장해 그릴 때 계산한다 (series.json).
+# {"title","color","time","start","end"(기간) | "repeat"(weekly/biweekly/monthly),
+#  "until","skip":[뺀 날],"done":[끝낸 날]}
+
+def iso_date(v):
+    try:
+        return dt.date.fromisoformat(v) if v else None
+    except (ValueError, TypeError):
+        return None
+
+
+def series_on(s, day):
+    """day 에 이 일정이 있는지."""
+    start = iso_date(s.get("start"))
+    if not start or day < start or day.isoformat() in (s.get("skip") or ()):
+        return False
+    kind = s.get("repeat")
+    if not kind:
+        return day <= (iso_date(s.get("end")) or start)
+    until = iso_date(s.get("until"))
+    if until and day > until:
+        return False
+    n = (day - start).days
+    if kind == "weekly":
+        return n % 7 == 0
+    if kind == "biweekly":
+        return n % 14 == 0
+    if kind == "monthly":
+        return day.day == start.day
+    return False
+
+
+def series_done_key(s, day):
+    return day.isoformat() if s.get("repeat") else s.get("start", "")
+
+
+def series_done(s, day):
+    return series_done_key(s, day) in (s.get("done") or ())
+
+
+def series_next(s, frm, horizon=400):
+    """frm 부터 가장 가까운, 아직 끝내지 않은 날. 기간 일정은 시작 전일 때만."""
+    start = iso_date(s.get("start"))
+    if not start:
+        return None
+    if not s.get("repeat"):
+        return start if start >= frm and not series_done(s, start) else None
+    day = max(frm, start)
+    for _ in range(horizon):
+        if series_on(s, day) and not series_done(s, day):
+            return day
+        day += dt.timedelta(days=1)
+    return None
+
+
+# ---------- 내보내기 (.ics · 백업) ----------
+
+def documents_dir():
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows"
+                            r"\CurrentVersion\Explorer\User Shell Folders") as k:
+            path = os.path.expandvars(winreg.QueryValueEx(k, "Personal")[0])
+        if os.path.isdir(path):
+            return path
+    except OSError:
+        pass
+    path = os.path.join(os.path.expanduser("~"), "Documents")
+    return path if os.path.isdir(path) else APP_DIR
+
+
+def _ics_text(t):
+    return ((t or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
+            .replace("\r", "").replace("\n", "\\n"))
+
+
+def _ics_fold(line):
+    """한 줄은 75바이트까지. 넘으면 다음 줄을 빈칸으로 시작해 잇는다 (글자 중간은 안 자른다)."""
+    out, cur, n = [], "", 0
+    for ch in line:
+        b = len(ch.encode("utf-8"))
+        if n + b > 73:
+            out.append(cur)
+            cur, n = " ", 1
+        cur += ch
+        n += b
+    out.append(cur)
+    return out
+
+
+def build_ics(events, series, courses, tt, periods, odd_monday, today, exam_name):
+    """일정·반복 일정·시험·수업을 다른 캘린더 앱이 읽는 .ics 글로 만든다.
+    시간은 시간대 없이 적는다 (받는 쪽에서 그 컴퓨터의 현지 시간으로 읽는다)."""
+    day1 = dt.timedelta(days=1)
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    is_time = re.compile(r"^\d\d:\d\d$").match
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//DeskCal//DeskCal//EN",
+             "CALSCALE:GREGORIAN"]
+
+    def at(day, tm):
+        return dt.datetime.combine(day, dt.time(int(tm[:2]), int(tm[3:5])))
+
+    def add(src, summary, day, tm="", end_day=None, end_tm="", rrule="", skip=(), where=""):
+        out = ["BEGIN:VEVENT",
+               "UID:" + hashlib.sha1(src.encode("utf-8")).hexdigest()[:24] + "@deskcal",
+               "DTSTAMP:" + stamp, "SUMMARY:" + _ics_text(summary)]
+        if tm and is_time(tm):
+            a = at(day, tm)
+            b = at(day, end_tm) if end_tm else a + dt.timedelta(hours=1)
+            out += ["DTSTART:" + a.strftime("%Y%m%dT%H%M%S"), "DTEND:" + b.strftime("%Y%m%dT%H%M%S")]
+            out += ["EXDATE:" + x.strftime("%Y%m%d") + a.strftime("T%H%M%S") for x in skip]
+        else:
+            out += ["DTSTART;VALUE=DATE:" + day.strftime("%Y%m%d"),
+                    "DTEND;VALUE=DATE:" + ((end_day or day) + day1).strftime("%Y%m%d")]
+            out += ["EXDATE;VALUE=DATE:" + x.strftime("%Y%m%d") for x in skip]
+        if rrule:
+            out.append("RRULE:" + rrule)
+        if where:
+            out.append("LOCATION:" + _ics_text(where))
+        lines.extend(out + ["END:VEVENT"])
+
+    def until(day, tm):
+        return ";UNTIL=" + day.strftime("%Y%m%d") + ("T235959" if tm and is_time(tm) else "")
+
+    for key in sorted(events):
+        day = iso_date(key)
+        for i, it in enumerate(events[key] if day else []):
+            add("e|%s|%d|%s" % (key, i, it.get("title", "")), it.get("title", ""), day,
+                it.get("time", ""))
+    freq = {"weekly": "FREQ=WEEKLY", "biweekly": "FREQ=WEEKLY;INTERVAL=2",
+            "monthly": "FREQ=MONTHLY"}
+    for i, sr in enumerate(series):
+        start = iso_date(sr.get("start"))
+        if not start:
+            continue
+        tm, src = sr.get("time", ""), "s|%d|%s|%s" % (i, sr.get("start"), sr.get("title", ""))
+        if sr.get("repeat") in freq:
+            rule = freq[sr["repeat"]]
+            if iso_date(sr.get("until")):
+                rule += until(iso_date(sr["until"]), tm)
+            skip = [d for d in (iso_date(x) for x in sr.get("skip") or []) if d]
+            add(src, sr.get("title", ""), start, tm, rrule=rule, skip=skip)
+        else:
+            add(src, sr.get("title", ""), start, end_day=iso_date(sr.get("end")) or start)
+    finals = []
+    for title in sorted(courses):
+        info = courses[title]
+        for k in EXAM_KEYS:
+            day = parse_date(info.get(k + "_date", ""))
+            if not day:
+                continue
+            if k == "fin":
+                finals.append(day)
+            note = info.get(k + "_time", "")
+            name = "%s · %s" % (exam_name(k), title)
+            add("x|%s|%s" % (title, k), name if is_time(note) or not note else
+                "%s (%s)" % (name, note), day, note if is_time(note) else "")
+    # 수업: 이번 주부터 기말 시험 날(없으면 18주 뒤)까지 매주
+    last = max([d for d in finals if d >= today] or [today + dt.timedelta(weeks=18)])
+    monday = today - dt.timedelta(days=today.weekday())
+    odd_now = ((monday - odd_monday).days // 7) % 2 == 0
+    for di in range(7):
+        p = 1
+        while p <= PERIODS:
+            it = tt.get("%d-%d" % (di, p))
+            if not it or not it.get("title"):
+                p += 1
+                continue
+            span = 1
+            while p + span <= PERIODS:
+                nx = tt.get("%d-%d" % (di, p + span))
+                if not nx or any(nx.get(k) != it.get(k) for k in ("title", "room")) \
+                        or nx.get("week", "all") != it.get("week", "all"):
+                    break
+                span += 1
+            if p + span - 2 < len(periods):
+                first = monday + dt.timedelta(days=di)
+                week = it.get("week", "all")
+                if week != "all" and (week == "odd") != odd_now:
+                    first += dt.timedelta(days=7)
+                a, b = periods[p - 1][0], periods[p + span - 2][1]
+                tm, end_tm = "%02d:%02d" % divmod(a, 60), "%02d:%02d" % divmod(b, 60)
+                add("c|%d|%d|%s" % (di, p, it["title"]), it["title"], first, tm, end_tm=end_tm,
+                    rrule="FREQ=WEEKLY" + (";INTERVAL=2" if week != "all" else "")
+                    + until(last, tm), where=it.get("room", ""))
+            p += span
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(x for line in lines for x in _ics_fold(line)) + "\r\n"
+
+
+def read_backup(path):
+    """백업 zip 을 읽어 {파일 이름: 내용}. DeskCal 백업이 아니면 None."""
+    try:
+        out = {}
+        with zipfile.ZipFile(path) as z:
+            sizes = {i.filename: i.file_size for i in z.infolist()}
+            for name, kind in BACKUP_TYPES.items():
+                if name not in sizes:
+                    continue
+                if sizes[name] > 20 * 1024 * 1024:
+                    return None
+                obj = json.loads(z.read(name).decode("utf-8-sig"))
+                if not isinstance(obj, kind):
+                    return None
+                out[name] = obj
+        return out if ("events.json" in out or "timetable.json" in out) else None
+    except Exception:
+        return None
+
+
+# ---------- 새 버전 확인 ----------
+
+def version_tuple(v):
+    return tuple(int(x) for x in re.findall(r"\d+", v or "")[:3])
+
+
+def fetch_latest_version(timeout=8):
+    """GitHub 에 올라온 최신 버전 번호 ('1.2.3'). 보내는 정보는 없다."""
+    req = urllib.request.Request(RELEASES_API, headers={
+        "User-Agent": "DeskCal", "Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        data = json.loads(r.read(400000).decode("utf-8"))
+    return str(data.get("tag_name") or "").lstrip("vV")
+
+
 class DeskCal(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -909,6 +1655,9 @@ class DeskCal(tk.Tk):
         self.events, self.data_ok = load_json(DATA_FILE, {})
         self.tt, self.tt_ok = load_json(TT_FILE, {})
         self.courses, self.cs_ok = load_json(COURSE_FILE, {})
+        self.series, self.sr_ok = load_json(series_file(), [])
+        if not isinstance(self.series, list):
+            self.series, self.sr_ok = [], False
         self.conf, _ = load_json(CONF_FILE, {})
         self.normalize_exam_dates()
         self.lang = self.conf.get("lang") if self.conf.get("lang") in TEXT else "en"
@@ -933,12 +1682,26 @@ class DeskCal(tk.Tk):
         self.selected = self.today
         self.color = pc(self.conf.get("color", PALETTE[0]))
         self.size_idx = min(max(int(self.conf.get("size", DEFAULT_SIZE)), 0), len(SIZES) - 1)
+        self.compact = bool(self.conf.get("compact", False))
+        if self.compact:
+            self.view = "cal"              # 컴팩트에는 시간표 화면이 없다
+        self.panel_mode = "day"            # 오른쪽 패널: day / upcoming / settings
+        self.range_to = None               # Shift+클릭으로 고른 기간의 반대쪽 끝
+        self.repeat = ""                   # 새 일정의 반복 (REPEATS)
+        self._scroll = self._scroll_mode = None
+        self._wheel, self._wheel_t = 0, 0.0
+        self._cls_sig = None
+        self._upd_q, self._upd_busy = queue.Queue(), False
+        latest = self.conf.get("update_latest")
+        self.update_ver = latest if (latest and version_tuple(str(latest))
+                                     > version_tuple(__version__)) else None
         self.float_mode = "--float" in sys.argv
         # 늘 바탕화면 바로 위에 둔다 ('항상 위' 설정은 없앴다). --float 는 테스트용.
         self.pinned = not self.float_mode
         self.conf.pop("pinned", None)
         self.undo_stack = []
         self._fonts = {}
+        self._discs = {}               # 부드러운 원 이미지 (지름, 색) → PhotoImage
         self._drag = None
         self.shell = None
         self.beats = 0
@@ -947,6 +1710,7 @@ class DeskCal(tk.Tk):
         self._z = "startup"
         self._fg_start = None
         self._topmost = False
+        self._shell_pid = (0.0, 0)     # (확인한 시각, 탐색기 프로세스 번호)
         self.glass = self.conf.get("glass") if self.conf.get("glass") in GLASS else "soft"
         self.glass_img = None
         self._glass_org = (0, 0)       # 유리 이미지 왼쪽 위의 화면 좌표
@@ -1008,6 +1772,7 @@ class DeskCal(tk.Tk):
         self.bind_all("<Escape>", lambda _: self.close_picker(), add="+")
         for ev in ("<Motion>", "<KeyPress>", "<ButtonPress>", "<MouseWheel>"):
             self.bind_all(ev, self.touch, add="+")
+        self.bind_all("<MouseWheel>", self.on_wheel, add="+")
         self._jobs = {"z": self.after(60, self.z_tick),
                       "dog": self.after(60000, self.watchdog),
                       "clock": self.after(30000, self.clock_tick),
@@ -1017,6 +1782,7 @@ class DeskCal(tk.Tk):
                       "glass60": self.after(60000, self.refresh_glass)}
         start_stall_watch(self)
         if not self.float_mode:
+            self._jobs["upd"] = self.after(20000, self.update_tick)
             self.init_autostart()
             if self.autostart:          # 로그온 때는 하던 일을 가로채지 않고 바탕화면에
                 self._z = "bottom"
@@ -1126,13 +1892,14 @@ class DeskCal(tk.Tk):
     def w(self):
         # 프리셋은 100% 배율 기준. 화면 배율만큼 키워야 어느 모니터에서든
         # 눈에 보이는 크기가 같다.
-        return int(SIZES[self.size_idx][0] * self.dpi)
+        return int((COMPACT if self.compact else SIZES[self.size_idx])[0] * self.dpi)
 
     def h(self):
-        return int(SIZES[self.size_idx][1] * self.dpi)
+        return int((COMPACT if self.compact else SIZES[self.size_idx])[1] * self.dpi)
 
     def u(self):
-        return self.w() / 780.0
+        # 컴팩트는 창은 좁아도 글자는 '보통' 크기 그대로 쓴다
+        return self.dpi if self.compact else self.w() / 780.0
 
     def px(self, n):
         return max(1, int(round(n * self.u())))
@@ -1172,9 +1939,47 @@ class DeskCal(tk.Tk):
                 return t
         return "…"
 
+    def disc(self, c, cx, cy, r, color, **kw):
+        """캔버스 c 에 가장자리가 부드러운 원을 그린다 (중심 cx,cy · 반지름 r)."""
+        d = max(2, int(round(r * 2)))
+        key = (d, color)
+        img = self._discs.get(key)
+        if img is None:
+            img = self._discs[key] = tk.PhotoImage(master=self, data=disc_png(d, color),
+                                                   format="png")
+        return c.create_image(int(round(cx - d / 2.0)), int(round(cy - d / 2.0)),
+                              image=img, anchor="nw", **kw)
+
+    def gear(self, on):
+        d = self.px(19) | 1                     # 홀수 크기라야 가운데가 한 픽셀에 맞는다
+        key = ("gear", d, FG if on else MUTED)
+        if key not in self._discs:
+            self._discs[key] = tk.PhotoImage(master=self, data=gear_png(d, key[2]),
+                                             format="png")
+        return self._discs[key]
+
+    def cal_size(self):
+        """달력·시간표 캔버스의 크기. 화면에 놓이기 전에도 알 수 있게 배치값을 쓴다
+        (그래야 처음부터 그려 둘 수 있어, 빈 단색이 한 번 보였다 바뀌는 깜빡임이 없다)."""
+        x0, y0, x1, y1 = self.cal_box
+        return x1 - x0, y1 - y0
+
     def set_size(self, idx):
+        self.tt_commit()
         self.size_idx = min(max(idx, 0), len(SIZES) - 1)
+        self.compact = False
         self.conf["size"] = self.size_idx
+        self.build()
+        self.ensure_on_screen()
+        self.save_conf()
+
+    def set_compact(self):
+        """달력 격자 없이 오늘 수업·일정·다가오는 일정만 보이는 작은 창."""
+        self.tt_commit()
+        self.compact = True
+        self.view = self.conf["view"] = "cal"
+        self.selected = self.today
+        self.range_to = None
         self.build()
         self.ensure_on_screen()
         self.save_conf()
@@ -1209,6 +2014,24 @@ class DeskCal(tk.Tk):
 
     def owns(self, h):
         return win_pid(h) == os.getpid()
+
+    def shell_pid(self):
+        """탐색기(바탕화면·작업표시줄) 프로세스 번호. 탐색기가 다시 켜질 수 있어 몇 초마다 새로 본다."""
+        now = time.time()
+        if now - self._shell_pid[0] > 5:
+            tray = user32.FindWindowW("Shell_TrayWnd", None)
+            self._shell_pid = (now, win_pid(tray) if tray else 0)
+        return self._shell_pid[1]
+
+    def is_shell_ui(self, h, cls):
+        """바탕화면·작업표시줄, 그리고 탐색기가 잠깐 띄우는 메뉴(파일 우클릭 메뉴 등)인가.
+        이런 창이 앞에 와도 '다른 앱으로 돌아갔다'고 보지 않는다."""
+        if cls in DESK_SHELL_CLASSES or cls in SHELL_MENU_CLASSES:
+            return True
+        if cls in EXPLORER_APP_CLASSES:
+            return False
+        pid = self.shell_pid()
+        return bool(pid) and win_pid(h) == pid
 
     def is_below(self, top):
         """top 창보다 내 창이 아래에 있는가 (top 에서 아래로 따라 내려가 찾는다)."""
@@ -1251,13 +2074,20 @@ class DeskCal(tk.Tk):
         self._z = "showdesk"
         log("바탕화면 보기 감지 - 바탕화면 위로 올림%s" % (" (맨 위 층)" if self._topmost else ""))
 
-    def lower_to_desktop(self):
+    def lower_to_desktop(self, why=None):
         if self._z == "showdesk":
-            log("바탕화면 보기 끝 - 원래 자리로")
+            log("바탕화면 보기 끝 - 원래 자리로%s" % (" (앞 창: %s)" % why if why else ""))
         if self._topmost:
             user32.SetWindowPos(self.hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_KEEP)
             self._topmost = False
         user32.SetWindowPos(self.hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_KEEP)
+        # 바탕화면을 누르면 바탕화면 창이 위젯 위로 올라와 있을 수 있다. 그 상태로 맨 밑에
+        # 두면 바탕화면 밑에 깔려 사라지므로, 그때는 바탕화면 창 바로 위에 둔다.
+        desk = self.is_covered_by_desktop()
+        if desk:
+            above = user32.GetWindow(desk, GW_HWNDPREV)
+            user32.SetWindowPos(self.hwnd, above or HWND_TOP, 0, 0, 0, 0, SWP_KEEP)
+            log("바탕화면이 위에 있어 그 바로 위에 둠")
         self._z = "bottom"
 
     def summon(self, quiet=False):
@@ -1292,14 +2122,14 @@ class DeskCal(tk.Tk):
             return
         fg = user32.GetForegroundWindow()
         fg_cls = win_class(fg) if fg else ""
-        is_desk_shell = (not fg) or (fg_cls in DESK_SHELL_CLASSES) or self.owns(fg)
+        is_desk_shell = (not fg) or self.owns(fg) or self.is_shell_ui(fg, fg_cls)
 
         if self._z == "showdesk":
-            # 바탕화면 보기 중에는 바탕화면·작업표시줄이나 위젯을 만지는 동안 그대로 둔다.
+            # 바탕화면 보기 중에는 바탕화면·작업표시줄·탐색기 메뉴나 위젯을 만지는 동안 그대로 둔다.
             # 진짜 다른 앱 창(Chrome 등)으로 돌아갔을 때만 바탕화면 보기를 끝낸다.
-            if fg and not self.owns(fg) and fg_cls not in DESK_SHELL_CLASSES:
+            if fg and not is_desk_shell:
                 if user32.IsWindowVisible(fg) and not is_cloaked(fg):
-                    self.lower_to_desktop()
+                    self.lower_to_desktop(why=fg_cls)
             return
 
         if fg and self.owns(fg):                      # 위젯을 쓰는 중
@@ -1408,6 +2238,10 @@ class DeskCal(tk.Tk):
                 self.go_today()                        # 한동안 손대지 않으면 오늘로
             if self.view == "tt":
                 self.tick_now()                        # '지금 수업' 표시를 옮긴다
+            if self.compact and self.panel_mode == "day" and not self.busy():
+                st = self.period_state()
+                if (self.today, st[:2] if st else None) != self._cls_sig:
+                    self.render_panel()                # 컴팩트의 '지금 수업' 강조
         except Exception:
             log("clock_tick 예외:\n" + traceback.format_exc())
         self._jobs["clock"] = self.after(30000, self.clock_tick)
@@ -1467,13 +2301,20 @@ class DeskCal(tk.Tk):
     def layout(self):
         """창 안 배치를 숫자로 정한다. 유리 배경의 패널 평균색을 잴 때도 쓴다."""
         W, H = self.w(), self.h()
-        self.pad = self.px(18)
-        self.head_h = self.px(66)
-        pw = int(W * 0.38)
-        gap = self.px(18)
-        self.card_box = (W - self.pad - pw, self.head_h, W - self.pad, H - self.pad)
-        self.cal_box = (self.pad, self.head_h, W - self.pad - pw - gap, H - self.pad)
-        ins = self.px(16)
+        if self.compact:                      # 카드 하나가 창을 다 쓴다
+            self.pad = self.px(12)
+            self.head_h = self.px(54)
+            self.card_box = (self.pad, self.head_h, W - self.pad, H - self.pad)
+            self.cal_box = (0, 0, 0, 0)
+            ins = self.px(14)
+        else:
+            self.pad = self.px(18)
+            self.head_h = self.px(66)
+            pw = int(W * 0.38)
+            gap = self.px(18)
+            self.card_box = (W - self.pad - pw, self.head_h, W - self.pad, H - self.pad)
+            self.cal_box = (self.pad, self.head_h, W - self.pad - pw - gap, H - self.pad)
+            ins = self.px(16)
         x0, y0, x1, y1 = self.card_box
         self.panel_box = (x0 + ins, y0 + ins, x1 - ins, y1 - ins)
         self.panel_w = self.panel_box[2] - self.panel_box[0]
@@ -1535,53 +2376,106 @@ class DeskCal(tk.Tk):
         self._glass_sig = tuple(int(v) // 6 for v in avg_all)
         derive_colors(avg_all, avg_panel)
 
-    def build(self):
+    def build(self, capture=True):
+        """창 안을 (다시) 그린다. 캔버스와 패널은 처음 한 번만 만들고, 그 뒤로는 같은
+        것을 제자리에서 다시 칠한다. 부수고 새로 만들면 그 사이 빈 창이 보여 번쩍인다.
+        capture=False 면 바탕화면을 다시 받아 오지 않고 지금 유리·색을 그대로 쓴다."""
         if self._drag:
-            return                            # 드래그 중에는 캔버스를 재생성하지 않는다
-        if self.shell:
+            return                            # 드래그 중에는 다시 그리지 않는다
+        first = self.shell is None
+        if not first:
             self.tt_commit()                   # 크기·언어·테마를 바꿔도 적던 건 저장
             self.close_picker()
             self.hide_tip()
-            self.shell.destroy()
+        self._discs = {}
         W, H = self.w(), self.h()
         self.geometry("%dx%d" % (W, H))
-        self.make_background()
+        if capture:
+            self.make_background()
+        else:
+            self.layout()
         self.configure(bg=BG)
 
         # 창 전체가 캔버스 한 장이다. 위젯은 배경이 불투명해 유리 위에 올리면 네모난
         # 자국이 생기므로, 유리 위에 보이는 머리줄과 달력은 캔버스에 직접 그린다.
-        c = self.shell = self.base = tk.Canvas(self, width=W, height=H, bg=BG,
-                                              highlightthickness=0, bd=0)
-        c.pack(fill="both", expand=True)
+        if first:
+            c = self.shell = self.base = tk.Canvas(self, width=W, height=H, bg=BG,
+                                                  highlightthickness=0, bd=0)
+            # 오른쪽 패널 = 유리 위의 카드. 내용(self.panel)은 다시 그릴 때마다 새로 만들어
+            # 이 틀 안에서 갈아 끼운다 (render_panel).
+            self.panel_host = tk.Frame(c, bg=CARD)
+            self.panel = tk.Frame(self.panel_host, bg=CARD)
+            self._panel_win = c.create_window(0, 0, window=self.panel_host, anchor="nw")
+            self.cal = tk.Canvas(c, bg=BG, highlightthickness=0, bd=0)   # 달력·시간표
+            self._cal_win = c.create_window(0, 0, window=self.cal, anchor="nw")
+            self.cal.bind("<Configure>", lambda _: self.draw())
+            self.cal.bind("<Button-1>", self.on_click)
+            self.cal.bind("<Shift-Button-1>", self.on_shift_click)
+            self.cal.bind("<Control-Button-1>", self.on_tt_ctrl_click)
+            self.cal.bind("<B1-Motion>", self.on_tt_drag)
+            self.cal.bind("<ButtonRelease-1>", self.on_tt_release)
+            self.cal.bind("<Button-3>", self.menu)
+            c.bind("<ButtonPress-1>", self.drag_start)
+            c.bind("<B1-Motion>", self.drag_move)
+            c.bind("<ButtonRelease-1>", self.drag_end)
+            c.bind("<Button-3>", self.menu)
+            c.pack(fill="both", expand=True)
+        c = self.base
+        c.config(width=W, height=H, bg=BG)
+        c.delete("glass")
+        c.delete("frame")
         if self.glass_img:
-            c.create_image(0, 0, image=self.glass_img, anchor="nw", tags="glass")
-        c.create_rectangle(0, 0, W - 1, H - 1, outline=mix(BG, FG, 0.16))
-
-        x0, y0, x1, y1 = self.card_box           # 오른쪽 패널 = 유리 위의 카드
-        round_rect(c, x0, y0, x1, y1, self.px(18), fill=CARD, outline=mix(CARD, FG, 0.10))
+            ix, iy = self.glass_shift()
+            c.create_image(ix, iy, image=self.glass_img, anchor="nw", tags="glass")
+        c.create_rectangle(0, 0, W - 1, H - 1, outline=mix(BG, FG, 0.16), tags="frame")
+        x0, y0, x1, y1 = self.card_box
+        round_rect(c, x0, y0, x1, y1, self.px(18), fill=CARD, outline=mix(CARD, FG, 0.10),
+                   tags="frame")
         px0, py0, px1, py1 = self.panel_box
-        self.panel = tk.Frame(c, bg=CARD, width=px1 - px0, height=py1 - py0)
-        self.panel.pack_propagate(False)
-        c.create_window(px0, py0, window=self.panel, anchor="nw")
-
-        cx0, cy0, cx1, cy1 = self.cal_box        # 달력·시간표 = 유리 위에 바로
-        self.cal = tk.Canvas(c, bg=BG, highlightthickness=0, bd=0,
-                             width=cx1 - cx0, height=cy1 - cy0)
-        c.create_window(cx0, cy0, window=self.cal, anchor="nw")
-        self.cal.bind("<Configure>", lambda _: self.draw())
-        self.cal.bind("<Button-1>", self.on_click)
-        self.cal.bind("<Control-Button-1>", self.on_tt_ctrl_click)
-        self.cal.bind("<B1-Motion>", self.on_tt_drag)
-        self.cal.bind("<ButtonRelease-1>", self.on_tt_release)
-        self.cal.bind("<Button-3>", self.menu)
-
-        c.bind("<ButtonPress-1>", self.drag_start)
-        c.bind("<B1-Motion>", self.drag_move)
-        c.bind("<ButtonRelease-1>", self.drag_end)
-        c.bind("<Button-3>", self.menu)
+        self.panel_host.config(bg=CARD, width=px1 - px0, height=py1 - py0)
+        c.coords(self._panel_win, px0, py0)
+        cx0, cy0, cx1, cy1 = self.cal_box
+        self.cal.config(bg=BG, width=max(1, cx1 - cx0), height=max(1, cy1 - cy0))
+        c.coords(self._cal_win, cx0, cy0)
+        c.itemconfig(self._cal_win, state="hidden" if self.compact else "normal")
         self.draw_header()
         self.render()
         self.schedule_desk(1500)
+
+    def recolor_from_desk(self):
+        """드래그를 놓은 자리에 맞게 색을 다시 맞춘다. 바탕화면을 다시 받아 오지 않고,
+        드래그 때 쓰던 바탕화면 유리에서 그 자리의 색을 읽는다 (다시 받아 오면 0.2초쯤
+        멈췄다가 화면이 통째로 바뀌어 번쩍인다). 그 유리로는 글자 대비가 모자라면 False."""
+        if not self.desk_ready() or self.glass_img is not self._desk["img"]:
+            return False
+        l, t, w, h = self._desk["key"][2]
+        k = DESK_K
+        sw, sh = len(range(0, w, k)), len(range(0, h, k))
+        x, y = self.window_pos()
+
+        def box(x0, y0, x1, y1):
+            return (max(0, (x + x0 - l) // k), max(0, (y + y0 - t) // k),
+                    min(sw, (x + x1 - l) // k), min(sh, (y + y1 - t) // k))
+        x0, y0, x1, y1 = box(0, 0, self.w(), self.h())
+        if x1 - x0 < 4 or y1 - y0 < 4:
+            return False
+        small = self._desk["small"]
+        avg_all = region_avg(small, sw, x0, y0, x1, y1)
+        worst = min(contrast(FG, p) for p in region_samples(small, sw, x0, y0, x1, y1, 30))
+        if self._glass_alpha < 0.92 and (worst < 4.5 or contrast(FG, avg_all) < 7):
+            return False
+        sig = tuple(int(v) // 6 for v in avg_all)
+        if sig == self._glass_sig:
+            self.move_glass()                  # 색이 그대로다: 유리만 맞추면 된다
+            return True
+        cx0, cy0, cx1, cy1 = box(*self.card_box)
+        avg_panel = (region_avg(small, sw, cx0, cy0, cx1, cy1)
+                     if cx1 - cx0 >= 2 and cy1 - cy0 >= 2 else avg_all)
+        apply_theme(self.theme)
+        derive_colors(avg_all, avg_panel)
+        self._glass_sig = sig
+        self.build(capture=False)
+        return True
 
     def glass_under(self, c, ox, oy):
         """캔버스 c 의 맨 아래에 유리 배경의 해당 부분을 깐다 (c 가 창 안 ox,oy 에 있을 때)."""
@@ -1604,7 +2498,8 @@ class DeskCal(tk.Tk):
         ix, iy = self.glass_shift()
         for c, (ox, oy) in ((self.base, (0, 0)), (self.cal, self.cal_box[:2])):
             for it in c.find_withtag("glass"):
-                c.itemconfig(it, image=self.glass_img)
+                if c.itemcget(it, "image") != str(self.glass_img):
+                    c.itemconfig(it, image=self.glass_img)
                 c.coords(it, ix - ox, iy - oy)
 
     def desk_ready(self):
@@ -1705,16 +2600,23 @@ class DeskCal(tk.Tk):
         w = tw + self.px(26)
         h = self.px(34)
         x0 = x1 - w
-        idle = SEL_BG if active else mix(BG, FG, 0.10)
-        hover = SEL_BG if active else mix(BG, FG, 0.18)
-        round_rect(c, x0, cy - h / 2, x1, cy + h / 2, h / 2, fill=idle, outline="",
+        def on():                              # 설정 버튼은 설정이 열려 있는 동안 켜져 있다
+            return active or (tag == "b_menu" and self.panel_mode == "settings")
+
+        def idle():
+            return SEL_BG if on() else mix(BG, FG, 0.10)
+        round_rect(c, x0, cy - h / 2, x1, cy + h / 2, h / 2, fill=idle(), outline="",
                    tags=("head", "btn", tag, tag + "_bg"))
-        c.create_text((x0 + x1) / 2, cy, text=label, font=fnt,
-                      fill=FG if active else MUTED, tags=("head", "btn", tag))
+        if tag == "b_menu":                     # 설정 버튼은 글자 대신 직접 그린 톱니바퀴
+            c.create_image(int((x0 + x1) / 2), int(cy), image=self.gear(on()),
+                           tags=("head", "btn", tag, tag + "_tx"))
+        else:
+            c.create_text((x0 + x1) / 2, cy, text=label, font=fnt,
+                          fill=FG if on() else MUTED, tags=("head", "btn", tag, tag + "_tx"))
         c.tag_bind(tag, "<Button-1>", lambda e: cmd(e))
-        c.tag_bind(tag, "<Enter>", lambda e: (c.itemconfig(tag + "_bg", fill=hover),
-                                              c.config(cursor="hand2")))
-        c.tag_bind(tag, "<Leave>", lambda e: (c.itemconfig(tag + "_bg", fill=idle),
+        c.tag_bind(tag, "<Enter>", lambda e: (c.itemconfig(
+            tag + "_bg", fill=SEL_BG if on() else mix(BG, FG, 0.18)), c.config(cursor="hand2")))
+        c.tag_bind(tag, "<Leave>", lambda e: (c.itemconfig(tag + "_bg", fill=idle()),
                                               c.config(cursor="")))
         if tip:
             self.tip_canvas(c, tag, tip)
@@ -1723,12 +2625,23 @@ class DeskCal(tk.Tk):
     def draw_header(self):
         c = self.base
         c.delete("head")
+        c.config(cursor="")                    # 누른 버튼이 사라지면 <Leave> 가 오지 않는다
         W, cy = self.w(), self.head_h * 0.52
         gap = self.px(8)
         c.create_text(self.pad + self.px(4), cy, anchor="w", text="", fill=FG,
-                      font=self.f(21, True), tags=("head", "title"))
+                      font=self.f(17 if self.compact else 21, True), tags=("head", "title"))
+        # 톱니바퀴: 누르면 바로 아래 카드가 설정으로 바뀐다 (≡ 는 메뉴가 펼쳐질 것처럼 보였다)
         x = self.head_button("b_menu", W - self.pad, cy, "≡", self.menu, size=15,
                              tip=self.t("tip_menu"))
+        if self.update_ver:                      # 새 버전이 있으면 ≡ 에 점
+            box = c.bbox("b_menu_bg")
+            self.disc(c, box[2] - self.px(7), box[1] + self.px(7), self.px(4), ACCENT,
+                      tags=("head", "btn", "b_menu"))
+        if self.compact:
+            if self.selected != self.today:      # 다른 날을 보고 있으면 돌아오는 버튼
+                self.head_button("b_today", x - gap, cy, self.t("today"),
+                                 lambda e: self.go_today())
+            return
         for key in ("tt", "cal"):                # 달력 / 시간표 전환
             x = self.head_button("b_" + key, x - gap, cy, self.t(key),
                                  lambda e, k=key: self.set_view(k), active=self.view == key)
@@ -1764,12 +2677,23 @@ class DeskCal(tk.Tk):
 
     def set_view(self, key):
         self.tt_commit()                       # 화면을 바꾸기 전에 저장
+        if key == self.view or self.compact:
+            return
         self.view = key
         self.conf["view"] = key
-        self.build()
+        self.panel_mode = "day"
+        self.range_to = None
+        # 탭만 바꾸는 데 창 전체를 다시 만들 필요는 없다 (바탕화면을 다시 받아 오느라
+        # 끊기고 깜빡였다). 머리줄 버튼과 내용만 다시 그린다.
+        self.close_picker()
+        self.hide_tip()
+        self.draw_header()
+        self.render()
         self.save_conf()
 
     def draw(self):
+        if self.compact:
+            return
         if self.view == "tt":
             self.draw_tt()
         else:
@@ -1782,12 +2706,18 @@ class DeskCal(tk.Tk):
             self.on_grid_click(e)
 
     def render(self):
-        if self.view == "tt":
+        if self.compact:
+            self.set_title(self.day_title(self.selected))
+        elif self.view == "tt":
             self.set_title(self.t("tt_title", wk=self.week_label(self.today)))
         else:
             self.set_title(self.month_title(self.shown))
         self.draw()
         self.render_panel()
+
+    def day_title(self, d):
+        return self.t("day_title", m=d.month, d=d.day, wd=self.t("wd")[d.weekday()],
+                      mon=MONTHS_EN[d.month - 1][:3])
 
     # ---------- 달력 ----------
 
@@ -1795,12 +2725,39 @@ class DeskCal(tk.Tk):
         col = pc(col)
         return col if THEME == "dark" else mix(col, "#000000", 0.18)
 
+    def range_span(self):
+        """Shift+클릭으로 고른 기간 (첫날, 끝날). 없으면 None."""
+        if self.range_to and self.range_to != self.selected:
+            return tuple(sorted((self.selected, self.range_to)))
+        return None
+
+    def day_marks(self, day):
+        """그 날 달력 칸에 표시할 것: ([(모양, 색, 제목, 끝냄)], [기간 일정 (색, 시작?, 끝?)])."""
+        marks, bands = [], []
+        for kind, title, _ in self.exams_on(day):
+            marks.append(("sq", self.dot_color(self.course_color(title)),
+                          "%s · %s" % (self.t("exam_%s_s" % kind), title),
+                          self.exam_done(title, kind)))
+        for it in self.events.get(key_of(day), []):
+            marks.append(("dot", self.dot_color(it.get("color", PALETTE[0])),
+                          it.get("title", ""), bool(it.get("done"))))
+        for sr in self.series:
+            if not series_on(sr, day):
+                continue
+            col = self.dot_color(sr.get("color", PALETTE[0]))
+            if sr.get("repeat"):
+                marks.append(("dot", col, sr.get("title", ""), series_done(sr, day)))
+            else:
+                bands.append((DIM if series_done(sr, day) else col,
+                              sr.get("start") == day.isoformat(),
+                              (sr.get("end") or sr.get("start")) == day.isoformat()))
+        return marks, bands
+
     def draw_grid(self):
-        c = self.cal
-        W, H = c.winfo_width(), c.winfo_height()
-        if W < 40 or H < 40:
-            # 아직 크기가 잡히지 않은 캔버스는 지우지 않는다 (지우면 유리가 사라진다)
+        if self.compact:
             return
+        c = self.cal
+        W, H = self.cal_size()
         c.delete("all")
         self.glass_under(c, self.cal_box[0], self.cal_box[1])
         self.weeks = calendar.Calendar(firstweekday=6).monthdatescalendar(
@@ -1816,6 +2773,12 @@ class DeskCal(tk.Tk):
         r = max(2, int(unit * 0.05))
         pad = max(4.0, unit * 0.15)
         rad = max(4, int(unit * 0.18))
+        # 큰 크기에서는 점 대신 일정 제목을 칸에 바로 적는다
+        f_pre = max(10, int(unit * 0.135))
+        lh = f_pre * 1.5
+        preview = self.size_idx >= 3
+        band_h = max(2, self.px(3))
+        span = self.range_span()
 
         for i, d in enumerate(self.t("wd_cal")):
             c.create_text(self.gut + (i + 0.5) * self.cw, self.hh * 0.42, text=d,
@@ -1834,14 +2797,18 @@ class DeskCal(tk.Tk):
                 x0, y0 = self.gut + ci * self.cw, self.hh + ri * self.ch
                 x1 = x0 + self.cw
                 # 칸 전체를 칠하면 세로로 긴 막대가 되므로 높이를 제한한다
-                yb = y0 + min(self.ch - 3, unit * 1.12)
-                if day == self.selected:
+                # (제목을 적는 큰 크기에서는 칸을 다 쓴다)
+                yb = y0 + (self.ch - 3 if preview else min(self.ch - 3, unit * 1.12))
+                if span and span[0] <= day <= span[1]:
+                    round_rect(c, x0 + 3, y0 + 3, x1 - 3, yb, rad, outline="",
+                               fill=SEL_BG if day in (self.selected, self.range_to) else TODAY)
+                elif day == self.selected:
                     round_rect(c, x0 + 3, y0 + 3, x1 - 3, yb, rad, fill=SEL_BG, outline="")
                 ny = y0 + pad * 0.7 + f_day * 0.7          # 숫자의 세로 중심
                 if day == self.today:                     # 오늘은 강조색 동그라미
                     tw = self.measure(str(day.day), f_day, True)
-                    cx, rr = x0 + pad + tw / 2.0, f_day * 0.86
-                    c.create_oval(cx - rr, ny - rr, cx + rr, ny + rr, fill=ACCENT, outline="")
+                    cx, rr = round(x0 + pad + tw / 2.0), f_day * 0.86
+                    self.disc(c, cx, round(ny), rr, ACCENT)
                     c.create_text(cx, ny, text=str(day.day), fill=ACCENT_INK,
                                   font=(FONT, -f_day, "bold"))
                 else:
@@ -1849,22 +2816,54 @@ class DeskCal(tk.Tk):
                           SUN if ci == 0 else SAT if ci == 6 else FG)
                     c.create_text(x0 + pad, ny, text=str(day.day), fill=fg, anchor="w",
                                   font=(FONT, -f_day))
-                colors, done_only = [], True
-                for it in self.events.get(key_of(day), []):
-                    col = self.dot_color(it.get("color", PALETTE[0]))
-                    if not it.get("done"):
-                        done_only = False
-                        colors.append(col)             # 같은 색이어도 일정마다 하나씩
+                found, bands = self.day_marks(day)
+                bands = bands[:3]
+                band_step = band_h + self.px(2)
+                top = ny + f_day * 0.95 + len(bands) * band_step
+                n_lines = int((y0 + self.ch - self.px(6) - top) // lh) if preview else 0
                 cy = min(ny + f_day * 1.25 + r, yb - r - 3)
+                # 기간 일정은 옆 칸으로 이어지는 얇은 띠. 제목을 적는 큰 크기에서는 숫자
+                # 바로 아래, 아니면 점 아래에 둔다 (칸 맨 아래에 두면 아랫줄 것처럼 보인다).
+                band_top = (ny + f_day * 0.85 if preview else
+                            min(cy + r + self.px(4), y0 + self.ch - len(bands) * band_step - 1))
+                for k, (col, first, last) in enumerate(bands):
+                    by = band_top + k * band_step
+                    c.create_rectangle(x0 + (pad if first else 0), by,
+                                       x1 - (pad if last else 0), by + band_h,
+                                       fill=col, outline="", tags="band")
+                if n_lines >= 1 and found:
+                    # 제목 미리보기: 줄마다 표시 + 제목, 다 못 적으면 마지막 줄에 +N
+                    show, more = found, 0
+                    if len(found) > n_lines:
+                        more = len(found) - (n_lines - 1)
+                        show = found[:n_lines - 1]
+                    # 칸이 좁아 제목이 몇 글자 못 들어간다. 숫자보다 왼쪽에서 시작한다.
+                    mx = x0 + self.px(6) + r
+                    tx = mx + r + self.px(4)
+                    for k, (shape, col, title, done) in enumerate(show):
+                        ly = top + k * lh + lh / 2
+                        if shape == "sq":
+                            c.create_rectangle(mx - r, ly - r, mx + r, ly + r,
+                                               fill="" if done else col,
+                                               outline=DIM if done else "")
+                        elif done:
+                            c.create_oval(mx - r, ly - r, mx + r, ly + r, fill="", outline=DIM)
+                        else:
+                            self.disc(c, mx, ly, r, col, tags="dot")
+                        c.create_text(tx, ly, anchor="w", fill=DIM if done else FG,
+                                      font=(FONT, -f_pre), tags="preview",
+                                      text=self.fit(title, f_pre, x1 - self.px(3) - tx))
+                    if more:
+                        c.create_text(tx, top + len(show) * lh + lh / 2, anchor="w",
+                                      text="+%d" % more, fill=MUTED, font=(FONT, -f_pre))
+                    continue
                 # 시험·과제 마감은 네모, 일정은 동그라미 (시험이 먼저)
-                exams, exams_done = [], []
-                for kind, title, _ in self.exams_on(day):
-                    col = self.dot_color(self.course_color(title))
-                    (exams_done if self.exam_done(title, kind) else exams).append(col)
-                all_done = done_only and bool(self.events.get(key_of(day)))
-                marks = ([("sq", col) for col in exams] + [("dot", col) for col in colors]
+                evs = [m for m in found if m[0] == "dot"]
+                all_done = bool(evs) and all(m[3] for m in evs)
+                marks = ([("sq", m[1]) for m in found if m[0] == "sq" and not m[3]]
+                         + [("dot", m[1]) for m in evs if not m[3]]
                          + ([("ring", DIM)] if all_done else [])
-                         + [("sq_done", col) for col in exams_done])
+                         + [("sq_done", m[1]) for m in found if m[0] == "sq" and m[3]])
                 step = r * 2 + self.px(4)
                 fit = max(1, int((x1 - 3 - (x0 + pad)) // step))
                 more = 0
@@ -1880,21 +2879,48 @@ class DeskCal(tk.Tk):
                     elif shape == "ring":                    # 그 날 일정을 다 끝냄
                         c.create_oval(cx - r, cy - r, cx + r, cy + r, fill="", outline=DIM)
                     else:
-                        c.create_oval(cx - r, cy - r, cx + r, cy + r, fill=col, outline="")
+                        self.disc(c, cx, cy, r, col, tags="dot")
                 if more:
                     c.create_text(x0 + pad + len(marks) * step, cy, text="+%d" % more,
                                   anchor="w", fill=MUTED, font=(FONT, -max(8, int(r * 3.2))))
 
-    def on_grid_click(self, e):
+    def grid_day(self, e):
         if not getattr(self, "weeks", None) or e.y < self.hh or e.x < self.gut:
-            return
+            return None
         ci = int((e.x - self.gut) // self.cw)
         ri = int((e.y - self.hh) // self.ch)
         if 0 <= ri < len(self.weeks) and 0 <= ci < 7:
-            self.select(self.weeks[ri][ci])
+            return self.weeks[ri][ci]
+        return None
+
+    def on_grid_click(self, e):
+        day = self.grid_day(e)
+        if day:
+            self.select(day)
+
+    def on_shift_click(self, e):
+        """Shift+클릭: 고른 날부터 이 날까지를 기간으로 잡는다 (방학·여행 같은 여러 날 일정)."""
+        if self.view == "tt":
+            return self.on_tt_click(e)
+        day = self.grid_day(e)
+        if day and day != self.selected:
+            self.range_to, self.repeat, self.panel_mode = day, "", "day"
+            self.draw_grid()
+            self.render_panel()
+            try:
+                self.entry_w.focus_set()
+            except (AttributeError, tk.TclError):
+                pass
+        return "break"
 
     def select(self, day):
         self.selected = day
+        self.range_to = None
+        self.panel_mode = "day"
+        if self.compact:
+            self.draw_header()
+            self.render()
+            return
         if day.month != self.shown.month:
             self.shown = day.replace(day=1)
             self.set_title(self.month_title(self.shown))
@@ -1910,6 +2936,9 @@ class DeskCal(tk.Tk):
         self.today = dt.date.today()
         self.shown = self.today.replace(day=1)
         self.selected = self.today
+        self.range_to = None
+        if self.compact:
+            self.draw_header()
         self.render()
 
     # ---------- 시간표 ----------
@@ -1997,10 +3026,10 @@ class DeskCal(tk.Tk):
         return fill, edge, FG, sub
 
     def draw_tt(self):
-        c = self.cal
-        W, H = c.winfo_width(), c.winfo_height()
-        if W < 40 or H < 40:
+        if self.compact:
             return
+        c = self.cal
+        W, H = self.cal_size()
         c.delete("all")
         self.glass_under(c, self.cal_box[0], self.cal_box[1])
         odd_now = self.is_odd_week(self.today)
@@ -2008,7 +3037,7 @@ class DeskCal(tk.Tk):
         self.thh = max(18.0, H * 0.06)            # 요일 머리글
         self.tcw = (W - self.tgut) / float(self.n_days)
         self.tch = (H - self.thh) / float(PERIODS)
-        f_hdr = max(9, int(min(self.thh * 0.52, self.tcw * 0.20)))
+        f_hdr = max(8, int(min(self.thh * 0.52, self.tcw * 0.20)))
         f_num = max(8, int(min(self.tch * 0.34, self.tgut * 0.30)))
         f_tm = max(7, int(f_num * 0.64))
         rad = max(4, int(min(self.tcw, self.tch) * 0.16))
@@ -2121,8 +3150,7 @@ class DeskCal(tk.Tk):
                            outline=ACCENT, width=3)
                 y = self.thh + (p - 1 + frac) * self.tch     # 지금 시각 표시 점
                 lx0 = self.tgut + today_col * self.tcw
-                c.create_oval(lx0 - 4, y - 4, lx0 + 4, y + 4, fill=ACCENT, outline="",
-                              tags="nowdot")
+                self.disc(c, lx0, y, 4, ACCENT, tags="nowdot")
             else:
                 round_rect(c, bx0 - 1, by0 - 1, bx1 + 1, by1 + 1, rad + 1, fill="",
                            outline=ACCENT, width=2, dash=(4, 3))
@@ -2166,13 +3194,14 @@ class DeskCal(tk.Tk):
         y = self.thh + (state[1] - 1 + state[2]) * self.tch
         lx0 = self.tgut + self.today.weekday() * self.tcw
         c.coords("nowline", lx0 + 2, y, lx0 + self.tcw - 2, y)
-        c.coords("nowdot", lx0 - 4, y - 4, lx0 + 4, y + 4)
+        c.coords("nowdot", int(round(lx0 - 4)), int(round(y - 4)))
 
     def on_tt_click(self, e):
         cell = self.tt_cell_at(e)
         if not cell:
             return
         self.tt_commit()                       # 다른 칸으로 옮기기 전에 적던 걸 저장
+        self.panel_mode = "day"
         self.tt_sel, self.tt_multi = cell, None
         self._tt_anchor, self._tt_base = cell, set()
         self.draw_tt()
@@ -2186,6 +3215,7 @@ class DeskCal(tk.Tk):
         if not cell:
             return "break"
         self.tt_commit()
+        self.panel_mode = "day"
         sel = self.tt_selection()
         sel ^= {cell}
         if not sel:
@@ -2208,6 +3238,7 @@ class DeskCal(tk.Tk):
         sel = self._tt_base | rect
         new = sel if len(sel) > 1 else None
         if new != self.tt_multi:
+            self.panel_mode = "day"
             self.tt_multi = new
             self.draw_tt()                     # 패널은 손을 뗄 때 한 번만 다시 그린다
             self._tt_dragged = True
@@ -2523,6 +3554,8 @@ class DeskCal(tk.Tk):
         self.exam_box = tk.Frame(self.panel, bg=CARD)
         self.exam_box.pack(fill="x")
         self.build_exams()
+        self.button(self.panel, self.t("pku_import"), self.import_pku, "plain", 10
+                    ).pack(side="bottom", anchor="w", pady=(self.px(10), 0))
 
     def build_exams(self):
         for w in self.exam_box.winfo_children():
@@ -2827,20 +3860,73 @@ class DeskCal(tk.Tk):
         self.close_picker()
         self.hide_tip()
         self._editing = False
-        for wgt in self.panel.winfo_children():
-            wgt.destroy()
-        if self.view == "tt":
+        # 새 일정 칸에 적던 글은 다시 그려도 남긴다 (체크·삭제·색 변경, 자정 넘김 등으로
+        # 패널이 새로 그려질 때 적던 글이 사라졌다).
+        draft = ""
+        try:
+            draft = self.entry_w.get()
+        except (AttributeError, tk.TclError):
+            pass
+        keep, sc, cv = None, self._scroll, None   # 목록을 다시 그려도 보던 자리를 지킨다
+        if sc is not None and self._scroll_mode == self.panel_mode:
+            try:
+                keep = sc.yview()[0]
+            except tk.TclError:
+                pass
+        self._scroll = None
+        # 새 내용을 다 만든 뒤에 예전 것 위에 덮고, 그 다음에 예전 것을 치운다. 먼저 비우면
+        # 그 사이 빈 카드가 몇 프레임 보여 누를 때마다 번쩍인다.
+        on = self.panel_mode == "settings"     # 설정 버튼의 켜짐 표시를 맞춘다
+        self.base.itemconfig("b_menu_bg", fill=SEL_BG if on else mix(BG, FG, 0.10))
+        self.base.itemconfig("b_menu_tx", image=self.gear(on))
+        old = self.panel
+        self.panel = new = tk.Frame(self.panel_host, bg=CARD)
+        try:
+            self.fill_panel(draft, keep)
+        finally:
+            # 위젯 수십 개를 화면에 올리는 데 0.05초쯤 걸리고 그동안은 빈 칸으로 보인다.
+            # 그래서 카드 밖(보이지 않는 곳)에서 다 올려 둔 다음 한 번에 제자리로 옮긴다.
+            px0, py0, px1, py1 = self.panel_box
+            new.place(x=(px1 - px0) + 40, y=0, width=px1 - px0, height=py1 - py0)
+            new.update_idletasks()
+            new.place(x=0, y=0, width=px1 - px0, height=py1 - py0)
+            old.destroy()
+
+    def fill_panel(self, draft, keep=None):
+        if self.panel_mode == "settings":
+            self.panel_settings()
+        elif self.view == "tt":
             self.panel_tt()
             return
+        elif self.panel_mode == "upcoming":
+            self.panel_upcoming()
+        else:
+            self.panel_day(draft)
+            return
+        self._scroll_mode = self.panel_mode
+        cv = self._scroll
+        if keep and cv is not None:
+            cv.after(15, lambda: cv.winfo_exists() and (cv.yview_moveto(keep), cv._sync()))
+
+    def panel_day(self, draft=""):
         d = self.selected
-        tk.Label(self.panel, bg=CARD, fg=FG, font=self.f(16, True), anchor="w",
-                 text=self.t("day_title", m=d.month, d=d.day, wd=self.t("wd")[d.weekday()],
-                             mon=MONTHS_EN[d.month - 1][:3])).pack(fill="x")
-        n = (d - self.today).days
-        tk.Label(self.panel, bg=CARD, fg=MUTED, font=self.f(11), anchor="w",
-                 text=self.t("dday_today") if n == 0 else
-                 ("D%+d" % -n if n < 0 else "D-%d" % n)
-                 ).pack(fill="x", pady=(self.px(2), self.px(10)))
+        span = self.range_span()
+        if self.compact:
+            self.make_classes(d)               # 날짜는 머리줄에 있다. 그 날 수업부터 보여준다
+        else:
+            if span:
+                title = "%s – %s" % (self.short_date(span[0]), self.short_date(span[1]))
+                sub = self.t("n_days", n=(span[1] - span[0]).days + 1)
+            else:
+                title = self.day_title(d)
+                n = (d - self.today).days
+                sub = (self.t("dday_today") if n == 0 else
+                       ("D%+d" % -n if n < 0 else "D-%d" % n))
+            tk.Label(self.panel, bg=CARD, fg=FG, font=self.f(14 if span else 16, True),
+                     anchor="w", text=self.fit(title, self.fpx(14 if span else 16),
+                                               self.panel_w, True)).pack(fill="x")
+            tk.Label(self.panel, bg=CARD, fg=MUTED, font=self.f(11), anchor="w", text=sub
+                     ).pack(fill="x", pady=(self.px(2), self.px(10)))
 
         if not self.data_ok:
             warn = tk.Label(self.panel, bg=CARD, fg=SUN, font=self.f(10), anchor="w",
@@ -2853,13 +3939,72 @@ class DeskCal(tk.Tk):
         exams = self.exams_on(d)
         for k, title, tm in exams:
             self.make_exam_row(k, title, tm)
-        if not items and not exams:
+        rows = ([(it.get("time", ""), "ev", i, it) for i, it in enumerate(items)]
+                + [(sr.get("time", ""), "sr", i, sr) for i, sr in enumerate(self.series)
+                   if series_on(sr, d)])
+        if not rows and not exams:
             tk.Label(self.panel, text=self.t("no_events"), bg=CARD, fg=DIM,
                      font=self.f(12), anchor="w").pack(fill="x", pady=(0, self.px(4)))
-        for i, it in enumerate(items):
-            self.make_row(i, it)
+        # 시간을 적은 일정은 시간순으로, 안 적은 일정은 그 위에 적은 순서대로
+        for tm, kind, i, it in sorted(rows, key=lambda x: (x[0] != "", x[0])):
+            if kind == "ev":
+                self.make_row(i, it)
+            else:
+                self.make_series_row(i, it, d)
         self.make_form()
+        if draft:
+            self.entry_w.insert(0, draft)
         self.make_upcoming()
+
+    def classes_on(self, day):
+        """그 날의 수업 [(시작 교시, 칸수, 내용)]. 그 주에 없는 单/双周 수업은 뺀다."""
+        di, odd, out, p = day.weekday(), self.is_odd_week(day), [], 1
+        while p <= PERIODS:
+            it = self.tt.get(self.tt_key(di, p))
+            if not it or not it.get("title"):
+                p += 1
+                continue
+            span = 1
+            while p + span <= PERIODS:
+                nx = self.tt.get(self.tt_key(di, p + span))
+                if not nx or nx.get("title") != it.get("title") \
+                        or nx.get("week", "all") != it.get("week", "all"):
+                    break
+                span += 1
+            week = it.get("week", "all")
+            if week == "all" or (week == "odd") == odd:
+                out.append((p, span, it))
+            p += span
+        return out
+
+    def make_classes(self, day):
+        st = self.period_state() if day == self.today else None
+        self._cls_sig = (self.today, st[:2] if st else None)
+        rows = self.classes_on(day)
+        if not rows:
+            return
+        cur = st[1] if st and st[0] == "now" else None
+        tw = self.measure("00:00", self.fpx(11), True) + self.px(4)
+        for p, span, it in rows:
+            hot = cur is not None and p <= cur < p + span
+            r = tk.Frame(self.panel, bg=CARD)
+            r.pack(fill="x", pady=self.px(2))
+            tm = tk.Frame(r, bg=CARD, width=tw, height=self.px(22))
+            tm.pack(side="left")
+            tm.pack_propagate(False)
+            tk.Label(tm, text=self.period_text(p)[:5], bg=CARD, fg=ACCENT if hot else MUTED,
+                     font=self.f(11, hot), anchor="w").pack(fill="both", expand=True)
+            tk.Frame(r, bg=self.dot_color(pc(it.get("color"))), width=max(2, self.px(3)),
+                     height=self.px(18)).pack(side="left", padx=(self.px(4), self.px(8)))
+            room = self.fit(it.get("room", ""), self.fpx(10), int(self.panel_w * 0.3))
+            if room:
+                tk.Label(r, text=room, bg=CARD, fg=DIM, font=self.f(10)).pack(side="right")
+            left = (self.panel_w - tw - self.px(18) - self.measure(room, self.fpx(10))
+                    - self.px(8))
+            tk.Label(r, text=self.fit(it.get("title", ""), self.fpx(12), left, hot), bg=CARD,
+                     fg=FG, font=self.f(12, hot), anchor="w").pack(side="left", fill="x",
+                                                                  expand=True)
+        tk.Frame(self.panel, bg=LINE, height=1).pack(fill="x", pady=(self.px(8), self.px(8)))
 
     def hoverable(self, row):
         """줄에 마우스를 올리면 배경을 살짝 바꿔 '누를 수 있는 줄'임을 보여준다."""
@@ -2952,10 +4097,17 @@ class DeskCal(tk.Tk):
             r *= 0.92
         tick = (m - r * 0.5, m + r * 0.02, m - r * 0.12, m + r * 0.42, m + r * 0.55, m - r * 0.42)
         if done:
-            shape(m - r, m - r, m + r, m + r, fill=mix(col, CARD, 0.25), outline="")
+            if square:
+                shape(m - r, m - r, m + r, m + r, fill=mix(col, CARD, 0.25), outline="")
+            else:
+                self.disc(c, m, m, r, mix(col, CARD, 0.25))
             c.create_line(*tick, fill=CARD, width=w, capstyle="round", joinstyle="round")
         else:
-            shape(m - r, m - r, m + r, m + r, fill="", outline=col, width=w)
+            if square:
+                shape(m - r, m - r, m + r, m + r, fill="", outline=col, width=w)
+            else:                              # 고리 = 색 원 위에 카드색 원
+                self.disc(c, m, m, r + w / 2.0, col)
+                self.disc(c, m, m, r - w / 2.0, CARD)
             hint = c.create_line(*tick, fill=mix(col, CARD, 0.45), width=w,
                                  capstyle="round", joinstyle="round", state="hidden")
             c.bind("<Enter>", lambda e: c.itemconfig(hint, state="normal"), add="+")
@@ -3017,25 +4169,118 @@ class DeskCal(tk.Tk):
         x.bind("<Enter>", lambda e: e.widget.config(fg=SUN), add="+")
         x.bind("<Leave>", lambda e: e.widget.config(fg=DIM), add="+")
         self.tip(x, self.t("tip_delete"))
+        tm = extra_time(it)
+        if tm:                                  # 제목에 없는 시간만 따로 보여준다
+            tk.Label(row, text=tm, bg=CARD, fg=DIM if done else MUTED, font=self.f(11)
+                     ).pack(side="right", padx=(self.px(4), 0))
 
         title = tk.Label(row, text=it["title"], bg=CARD, fg=DIM if done else FG,
                          font=self.f(13, strike=done), anchor="w", justify="left",
-                         wraplength=self.panel_w - self.px(80), cursor="xterm",
-                         pady=self.px(4))
+                         wraplength=self.panel_w - self.px(80 + (44 if tm else 0)),
+                         cursor="xterm", pady=self.px(4))
         title.pack(side="left", fill="x", expand=True, padx=(self.px(6), 0))
         # 한 번 클릭으로 고친다. 더블클릭은 해볼 생각을 하기 어렵다.
         title.bind("<Button-1>", lambda e, i=idx, rr=row: self.edit(i, rr))
         self.tip(title, self.t("tip_edit"))
         self.hoverable(row)
 
-    def edit(self, idx, row):
-        items = self.events.get(key_of(self.selected), [])
-        if idx >= len(items):
+    def make_series_row(self, si, sr, day):
+        """반복·기간 일정 한 줄. 고치면 그 일정 전체가 바뀐다."""
+        row = tk.Frame(self.panel, bg=CARD)
+        row.pack(fill="x", pady=self.px(1))
+        done = series_done(sr, day)
+        col = self.dot_color(sr.get("color", PALETTE[0]))
+        dot = self.check_box(row, col, done, False,
+                             lambda: self.toggle_series_done(si, day))
+        dot.pack(side="left", padx=(self.px(2), 0))
+        self.tip(dot, self.t("tip_check"))
+        x = tk.Label(row, text="×", bg=CARD, fg=DIM, font=self.f(15), cursor="hand2",
+                     padx=self.px(6))
+        x.pack(side="right")
+        x.bind("<Button-1>", lambda e: self.series_delete(si, day, row))
+        x.bind("<Enter>", lambda e: e.widget.config(fg=SUN), add="+")
+        x.bind("<Leave>", lambda e: e.widget.config(fg=DIM), add="+")
+        self.tip(x, self.t("tip_delete"))
+        if sr.get("repeat"):
+            tag = "↻ " + (extra_time(sr) or self.t("rep_" + sr["repeat"]))
+        else:
+            a, b = iso_date(sr.get("start")), iso_date(sr.get("end")) or iso_date(sr.get("start"))
+            tag = "%d/%d–%d/%d" % (a.month, a.day, b.month, b.day)
+        tag_w = self.measure(tag, self.fpx(10)) + self.px(6)
+        tk.Label(row, text=tag, bg=CARD, fg=DIM, font=self.f(10)
+                 ).pack(side="right", padx=(self.px(4), 0))
+        title = tk.Label(row, text=sr.get("title", ""), bg=CARD, fg=DIM if done else FG,
+                         font=self.f(13, strike=done), anchor="w", justify="left",
+                         wraplength=max(self.px(60), self.panel_w - self.px(80) - tag_w),
+                         cursor="xterm", pady=self.px(4))
+        title.pack(side="left", fill="x", expand=True, padx=(self.px(6), 0))
+
+        def commit(text):
+            self.push_undo()
+            sr["title"] = text
+            if sr.get("repeat"):               # 기간 일정에는 시간이 없다
+                sr["time"] = time_of(text)
+            self.save_series()
+        title.bind("<Button-1>", lambda e: self.inline_edit(row, sr.get("title", ""), commit))
+        self.tip(title, self.t("tip_edit"))
+        self.hoverable(row)
+
+    def toggle_series_done(self, si, day):
+        if si >= len(self.series):
             return
+        sr = self.series[si]
+        self.push_undo()
+        key, done = series_done_key(sr, day), list(sr.get("done") or [])
+        if key in done:
+            done.remove(key)
+        else:
+            done.append(key)
+        sr["done"] = done
+        self.save_series()
+        self.render()
+
+    def series_delete(self, si, day, row):
+        """기간 일정은 통째로 지운다. 반복 일정은 '이 날만 / 이 날부터 전부' 를 고르게 한다."""
+        if si >= len(self.series):
+            return
+        sr = self.series[si]
+        self.hide_tip()
+
+        def drop(mode):
+            self.push_undo()
+            start = iso_date(sr.get("start"))
+            if mode == "this":
+                sr["skip"] = list(sr.get("skip") or []) + [day.isoformat()]
+            elif mode == "after" and start and day > start:
+                sr["until"] = (day - dt.timedelta(days=1)).isoformat()
+            else:
+                self.series.remove(sr)
+            self.save_series()
+            self.render()
+        if not sr.get("repeat"):
+            drop("all")
+            return
+        bar = tk.Frame(self.panel, bg=CARD)
+        bar.pack(fill="x", pady=self.px(3), before=row)
+        row.pack_forget()
+        self.button(bar, self.t("del_this"), lambda: drop("this"), "plain", 10
+                    ).pack(side="left")
+        self.button(bar, self.t("del_after"), lambda: drop("after"), "danger", 10
+                    ).pack(side="left", padx=(self.px(6), 0))
+        self.button(bar, self.t("cancel"), self.render_panel, "plain", 10).pack(side="right")
+
+    def save_series(self):
+        if not self.sr_ok:
+            log("반복 일정을 읽지 못한 상태 - 저장을 건너뛴다")
+            return
+        save_json(series_file(), self.series)
+
+    def inline_edit(self, row, initial, on_commit):
+        """줄을 입력칸으로 바꿔 그 자리에서 고친다. Enter·다른 곳 클릭: 저장, Esc: 취소."""
         self.hide_tip()
         self._editing = True
         e = self.hint_entry(self.panel, 13, "")
-        e.insert(0, items[idx]["title"])
+        e.insert(0, initial)
         e.pack(fill="x", pady=self.px(2), ipady=self.px(5), before=row)
         row.pack_forget()
         e.focus_set()
@@ -3047,10 +4292,8 @@ class DeskCal(tk.Tk):
                 return
             state["closed"] = True
             t = e.get().strip()
-            if t and t != items[idx]["title"]:
-                self.push_undo()
-                items[idx]["title"] = t
-                self.save()
+            if t and t != initial:
+                on_commit(t)
             self.render()
 
         def cancel(_=None):
@@ -3061,12 +4304,42 @@ class DeskCal(tk.Tk):
         e.bind("<FocusOut>", commit)
         e.bind("<Escape>", cancel)
 
+    def edit(self, idx, row):
+        items = self.events.get(key_of(self.selected), [])
+        if idx >= len(items):
+            return
+        it = items[idx]
+
+        def commit(text):
+            self.push_undo()
+            it["title"] = text
+            if time_of(text):
+                it["time"] = time_of(text)
+            else:
+                it.pop("time", None)
+            self.save()
+        self.inline_edit(row, it["title"], commit)
+
     def make_form(self):
         wrap = tk.Frame(self.panel, bg=CARD)
         wrap.pack(fill="x", pady=(self.px(12), 0))
-        sw = self.swatches(wrap, self.color, self.set_color)
-        sw.pack(fill="x", pady=(0, self.px(6)))
+        top = tk.Frame(wrap, bg=CARD)
+        top.pack(fill="x", pady=(0, self.px(6)))
+        sw = self.swatches(top, self.color, self.set_color)
+        sw.pack(side="left")
         self.tip(sw, self.t("tip_color"))
+        if not self.range_span():              # 기간 일정은 반복하지 않는다
+            on = bool(self.repeat)
+            # 색 칩 옆에 남는 폭 안에서만 적는다 (넘치면 앞의 ↻ 가 잘려 안 보였다)
+            chips = len(PALETTE) * (self.px(18) + 2 * self.px(2) + self.px(5))
+            name = self.fit(self.t("rep_" + (self.repeat or "none")), self.fpx(10),
+                            self.panel_w - chips - self.px(10)
+                            - self.measure("↻ ", self.fpx(10), on), on)
+            rp = tk.Label(top, text="↻ " + name, bg=CARD,
+                          fg=ACCENT if on else DIM, font=self.f(10, on), cursor="hand2")
+            rp.pack(side="right")
+            rp.bind("<Button-1>", lambda e: self.cycle_repeat())
+            self.tip(rp, self.t("tip_repeat"))
         line = tk.Frame(wrap, bg=CARD)
         line.pack(fill="x")
         # 시간은 제목에 같이 적는다 (따로 칸을 두면 용도가 안 보인다)
@@ -3076,7 +4349,14 @@ class DeskCal(tk.Tk):
         self.entry_w.pack(side="left", fill="x", expand=True, ipady=self.px(6))
         self.entry_w.bind("<Return>", lambda _: self.add())
 
-    def make_upcoming(self):
+    def cycle_repeat(self):
+        self.repeat = REPEATS[(REPEATS.index(self.repeat) + 1) % len(REPEATS)]
+        self.render_panel()
+        self.entry_w.focus_set()
+        self.entry_w.icursor("end")
+
+    def upcoming_rows(self):
+        """다가오는 일 [(날짜, 제목, 시간, 색)] — 일정·반복 일정·시험을 날짜순으로."""
         rows = []
         for k, items in self.events.items():
             try:
@@ -3084,8 +4364,13 @@ class DeskCal(tk.Tk):
             except ValueError:
                 continue
             if d >= self.today:
-                rows += [(d, it.get("title", ""), "", it.get("color", PALETTE[0]))
-                         for it in items if not it.get("done")]
+                rows += [(d, it.get("title", ""), extra_time(it), it.get("color", PALETTE[0]),
+                          it.get("time", "")) for it in items if not it.get("done")]
+        for sr in self.series:                 # 반복 일정은 가장 가까운 한 번만
+            d = series_next(sr, self.today)
+            if d:
+                rows.append((d, sr.get("title", ""), extra_time(sr),
+                             sr.get("color", PALETTE[0]), sr.get("time", "")))
         # 시험·과제도 함께 보여준다. 과목 이름을 붙여야 뭐의 시험인지 알 수 있다.
         for title, info in self.courses.items():
             for k in EXAM_KEYS:
@@ -3094,11 +4379,48 @@ class DeskCal(tk.Tk):
                     # 시험 종류를 앞에 둔다. 과목명이 길어 잘릴 때 '期中'이 잘리면 안 된다.
                     rows.append((d, "%s · %s" % (self.t("exam_%s_s" % k), title),
                                  info.get(k + "_time", ""),
-                                 self.course_color(title)))
+                                 self.course_color(title), info.get(k + "_time", "")))
+        rows.sort(key=lambda r: (r[0], r[4] or ""))
+        return [r[:4] for r in rows]
+
+    def upcoming_row(self, box, d, title, tm, col, width=None):
+        width = width or self.panel_w
+        f_t, f_d = self.fpx(12), self.fpx(10)
+        pill_w = self.measure("D-000", self.fpx(10), True) + self.px(14)
+        dot_w = self.px(14)
+        # 날짜가 가까울수록 눈에 띄게: 오늘·내일 빨강, 일주일 안 주황, 그 뒤 회색
+        pbg, pfg = self.pill_colors((d - self.today).days)
+        r = tk.Frame(box, bg=CARD)
+        r.pack(fill="x", pady=self.px(3))
+        pill = tk.Frame(r, bg=pbg, width=pill_w, height=self.px(24))
+        pill.pack(side="left")
+        pill.pack_propagate(False)
+        tk.Label(pill, text=self.dday_text(d), bg=pbg, fg=pfg,
+                 font=self.f(10, True)).pack(expand=True)
+
+        when = self.fit(self.short_date(d) + (" " + tm if tm else ""), f_d,
+                        int(self.panel_w * 0.34))
+        tk.Label(r, text=when, bg=CARD, fg=MUTED, font=self.f(10)
+                 ).pack(side="right")
+        dot = tk.Canvas(r, width=dot_w, height=dot_w, bg=CARD, highlightthickness=0)
+        dot.pack(side="left", padx=(self.px(8), self.px(2)))
+        self.disc(dot, dot_w / 2.0, dot_w / 2.0, max(2, dot_w * 0.22), self.dot_color(col))
+        room = (width - pill_w - dot_w - self.px(18)
+                - self.measure(when, f_d) - self.px(8))
+        tk.Label(r, text=self.fit(title, f_t, room), bg=CARD, fg=FG,
+                 font=self.f(12), anchor="w").pack(side="left", fill="x", expand=True)
+        # 줄을 누르면 그 날짜로 간다 (배지는 제 색을 지켜야 하니 배경을 바꾸지 않는다)
+        plain = [r] + [w for w in r.winfo_children() if w is not pill]
+        for w in plain + [pill] + pill.winfo_children():
+            w.config(cursor="hand2")
+            w.bind("<Button-1>", lambda e, dd=d: self.select(dd))
+            w.bind("<Enter>", lambda e, ws=plain: [x.config(bg=HOVER) for x in ws], add="+")
+            w.bind("<Leave>", lambda e, ws=plain: [x.config(bg=CARD) for x in ws], add="+")
+
+    def make_upcoming(self):
+        rows = self.upcoming_rows()
         if not rows:
             return
-        rows.sort(key=lambda r: (r[0], r[2] or ""))
-
         box = tk.Frame(self.panel, bg=CARD)
         box.pack(fill="x", side="bottom", pady=(self.px(14), 0))
         tk.Frame(box, bg=LINE, height=1).pack(fill="x", pady=(0, self.px(10)))
@@ -3108,40 +4430,400 @@ class DeskCal(tk.Tk):
                  anchor="w").pack(side="left")
         tk.Label(hd, text=str(len(rows)), bg=CARD, fg=DIM, font=self.f(11)
                  ).pack(side="left", padx=(self.px(6), 0))
+        tk.Label(hd, text="›", bg=CARD, fg=DIM, font=self.f(13)).pack(side="right")
+        for w in [hd] + hd.winfo_children():   # 제목을 누르면 전체 목록
+            w.config(cursor="hand2")
+            w.bind("<Button-1>", lambda e: self.show_upcoming())
+            self.tip(w, self.t("tip_upcoming"))
+        for row in rows[:3 if self.compact else 5]:
+            self.upcoming_row(box, *row)
 
-        f_t, f_d = self.fpx(12), self.fpx(10)
-        pill_w = self.measure("D-000", self.fpx(10), True) + self.px(14)
-        dot_w = self.px(14)
-        for d, title, tm, col in rows[:5]:
-            # 날짜가 가까울수록 눈에 띄게: 오늘·내일 빨강, 일주일 안 주황, 그 뒤 회색
-            pbg, pfg = self.pill_colors((d - self.today).days)
-            r = tk.Frame(box, bg=CARD)
-            r.pack(fill="x", pady=self.px(3))
-            pill = tk.Frame(r, bg=pbg, width=pill_w, height=self.px(24))
-            pill.pack(side="left")
-            pill.pack_propagate(False)
-            tk.Label(pill, text=self.dday_text(d), bg=pbg, fg=pfg,
-                     font=self.f(10, True)).pack(expand=True)
+    def show_upcoming(self):
+        self.panel_mode = "upcoming"
+        self.render_panel()
 
-            when = self.fit(self.short_date(d) + (" " + tm if tm else ""), f_d,
-                            int(self.panel_w * 0.34))
-            tk.Label(r, text=when, bg=CARD, fg=MUTED, font=self.f(10)
-                     ).pack(side="right")
-            dot = tk.Canvas(r, width=dot_w, height=dot_w, bg=CARD, highlightthickness=0)
-            dot.pack(side="left", padx=(self.px(8), self.px(2)))
-            q = dot_w * 0.22
-            dot.create_oval(dot_w / 2 - q, dot_w / 2 - q, dot_w / 2 + q, dot_w / 2 + q,
-                            fill=self.dot_color(col), outline="")
-            room = (self.panel_w - pill_w - dot_w - self.px(18)
-                    - self.measure(when, f_d) - self.px(8))
-            tk.Label(r, text=self.fit(title, f_t, room), bg=CARD, fg=FG,
-                     font=self.f(12), anchor="w").pack(side="left", fill="x", expand=True)
+    def close_mode(self):
+        self.panel_mode = "day"
+        self.render_panel()
+
+    def scroll_area(self, parent):
+        """휠로 넘기는 세로 목록. 안쪽 프레임을 돌려준다."""
+        cv = tk.Canvas(parent, bg=CARD, highlightthickness=0, bd=0,
+                       yscrollincrement=self.px(30))
+        cv.pack(fill="both", expand=True)
+        inner = tk.Frame(cv, bg=CARD)
+        bw = max(2, self.px(3))
+        cv.create_window(0, 0, window=inner, anchor="nw", width=self.panel_w - bw - self.px(5))
+        thumb = tk.Frame(cv, bg=LINE)          # 아래에 더 있을 때만 보이는 얇은 막대
+
+        def sync(*_):
+            if not cv.winfo_exists():
+                return
+            a, b = cv.yview()
+            if b - a >= 0.999:
+                thumb.place_forget()
+            else:
+                thumb.place(relx=1.0, x=-bw, rely=a, relheight=b - a, width=bw)
+
+        def resized(e):
+            cv.config(scrollregion=(0, 0, e.width, e.height))
+            cv.after_idle(sync)
+        inner.bind("<Configure>", resized)
+        cv.bind("<Configure>", lambda e: cv.after_idle(sync))
+        cv._sync = sync
+        self._scroll = cv
+        return inner
+
+    def on_wheel(self, e):
+        """목록 위에서는 목록을 넘기고, 달력 위에서는 달을 넘긴다."""
+        try:
+            w = self.winfo_containing(e.x_root, e.y_root)
+        except (KeyError, tk.TclError):
+            return
+        if w is None:
+            return
+        cv = self._scroll
+        if cv is not None and cv.winfo_exists() and str(w).startswith(str(self.panel_host)):
+            if cv.yview() != (0.0, 1.0):
+                cv.yview_scroll(-1 if e.delta > 0 else 1, "units")
+                cv._sync()
+            return
+        if w is self.cal and self.view == "cal" and not self.compact:
+            now = time.time()
+            if now - self._wheel_t > 0.6:
+                self._wheel = 0                # 오래된 자투리 움직임은 버린다
+            self._wheel += e.delta
+            if abs(self._wheel) >= 120 and now - self._wheel_t > 0.1:
+                n = -1 if self._wheel > 0 else 1
+                self._wheel, self._wheel_t = 0, now
+                self.shift(n)
+
+    def panel_head(self, text, count=None):
+        """목록·설정 패널의 머리줄: 제목 + 닫기(×)."""
+        hd = tk.Frame(self.panel, bg=CARD)
+        hd.pack(fill="x", pady=(0, self.px(8)))
+        tk.Label(hd, text=text, bg=CARD, fg=FG, font=self.f(16, True)).pack(side="left")
+        if count is not None:
+            tk.Label(hd, text=str(count), bg=CARD, fg=DIM, font=self.f(12)
+                     ).pack(side="left", padx=(self.px(8), 0))
+        x = tk.Label(hd, text="×", bg=CARD, fg=MUTED, font=self.f(18), cursor="hand2",
+                     padx=self.px(4))
+        x.pack(side="right")
+        x.bind("<Button-1>", lambda e: self.close_mode())
+        x.bind("<Enter>", lambda e: e.widget.config(fg=FG), add="+")
+        x.bind("<Leave>", lambda e: e.widget.config(fg=MUTED), add="+")
+        self.tip(x, self.t("close"))
+
+    def panel_upcoming(self):
+        """다가오는 일 전체. 이번 주 / 다음 주 / 그 이후로 묶는다."""
+        rows = self.upcoming_rows()
+        self.panel_head(self.t("upcoming"), len(rows))
+        inner = self.scroll_area(self.panel)
+        if not rows:
+            tk.Label(inner, text=self.t("no_events"), bg=CARD, fg=DIM, font=self.f(12),
+                     anchor="w").pack(fill="x")
+            return
+        sunday = self.today + dt.timedelta(days=6 - self.today.weekday())
+        last = None
+        for d, title, tm, col in rows:
+            group = ("up_this_week" if d <= sunday else
+                     "up_next_week" if d <= sunday + dt.timedelta(days=7) else "up_later")
+            if group != last:
+                tk.Label(inner, text=self.t(group), bg=CARD, fg=MUTED, font=self.f(10, True),
+                         anchor="w").pack(fill="x", pady=(self.px(8) if last else 0,
+                                                          self.px(2)))
+                last = group
+            self.upcoming_row(inner, d, title, tm, col, self.panel_w - self.px(10))
+
+    # ---------- 설정 패널 ----------
+
+    def menu(self, e=None):
+        """≡ 또는 우클릭: 오른쪽 카드에 설정을 연다 (다시 누르면 닫는다)."""
+        self.tt_commit()
+        self.panel_mode = "day" if self.panel_mode == "settings" else "settings"
+        self.render_panel()
+
+    def seg(self, parent, label, options, cmd):
+        """이름 한 줄 + 고르는 버튼들. options: [(값, 글, 켜짐)]. 폭이 모자라면 줄을 바꾼다."""
+        tk.Label(parent, text=label, bg=CARD, fg=MUTED, font=self.f(11), anchor="w"
+                 ).pack(fill="x", pady=(self.px(12), self.px(5)))
+        row, used, gap = None, 0, self.px(5)
+        # 고른 것은 강조색으로 채우고, 나머지도 본문 글자색으로 또렷하게
+        off_bg = mix(CARD, FG, 0.13)
+        for val, text, on in options:
+            wd = self.measure(text, self.fpx(12), on) + self.px(24) + gap + 4
+            if row is None or used + wd > self.panel_w - self.px(10):
+                row = tk.Frame(parent, bg=CARD)
+                row.pack(fill="x", pady=(0, gap))
+                used = 0
+            b = tk.Label(row, text=text, bg=ACCENT if on else off_bg,
+                         fg=ACCENT_INK if on else FG, font=self.f(12, on),
+                         padx=self.px(12), pady=self.px(6), cursor="hand2")
+            b.pack(side="left", padx=(0, gap))
+            b.bind("<Button-1>", lambda e, v=val: cmd(v))
+            if not on:
+                b.bind("<Enter>", lambda e: e.widget.config(bg=mix(CARD, FG, 0.24)), add="+")
+                b.bind("<Leave>", lambda e: e.widget.config(bg=off_bg), add="+")
+            used += wd
+
+    def toggle_row(self, parent, text, on, cmd):
+        row = tk.Frame(parent, bg=CARD, cursor="hand2")
+        row.pack(fill="x", pady=self.px(1))
+        box = self.check_box(row, ACCENT if on else MUTED, on, True, cmd)
+        box.pack(side="left")
+        lab = tk.Label(row, text=text, bg=CARD, fg=FG, font=self.f(13), anchor="w",
+                       justify="left", cursor="hand2",
+                       wraplength=self.panel_w - self.px(50), pady=self.px(5))
+        lab.pack(side="left", fill="x", expand=True, padx=(self.px(4), 0))
+        for w in (row, lab):
+            w.bind("<Button-1>", lambda e: cmd())
+        self.hoverable(row)
+
+    def panel_settings(self):
+        self.panel_head(self.t("settings"))
+        box = self.scroll_area(self.panel)
+        if self.update_ver:
+            self.button(box, self.t("upd_get", v=self.update_ver), self.open_release,
+                        "primary", 11).pack(fill="x", pady=(0, self.px(4)))
+        self.seg(box, self.t("lang"),
+                 [(code, TEXT[code]["lang_name"], code == self.lang) for code in TEXT],
+                 self.set_lang)
+        self.seg(box, self.t("theme"),
+                 [(n, self.t(n), n == self.theme) for n in ("dark", "light")], self.set_theme)
+        self.seg(box, self.t("glass"),
+                 [(k, self.t("glass_" + k), k == self.glass) for k in ("soft", "clear", "off")],
+                 self.set_glass)
+        sizes = [(-1, self.t("compact"), self.compact)] + [
+            (i, self.t("sizes")[i], i == self.size_idx and not self.compact)
+            for i in range(len(SIZES))]
+        self.seg(box, self.t("size"), sizes,
+                 lambda i: self.set_compact() if i < 0 else self.set_size(i))
+        odd = self.is_odd_week(self.today)
+        self.seg(box, self.t("parity"),
+                 [(True, self.t("set_odd"), odd), (False, self.t("set_even"), not odd)],
+                 self.set_week_kind)
+        tk.Frame(box, bg=LINE, height=1).pack(fill="x", pady=(self.px(14), self.px(8)))
+        self.toggle_row(box, self.t("weekend_tt"), self.weekend_tt, self.toggle_weekend_tt)
+        auto = autostart_enabled()
+        self.toggle_row(box, self.t("autostart"), auto,
+                        lambda: (self.set_autostart_pref(not auto), self.render_panel()))
+        upd = bool(self.conf.get("update_check", True))
+        self.toggle_row(box, self.t("upd_check"), upd, lambda: self.set_update_check(not upd))
+        tk.Frame(box, bg=LINE, height=1).pack(fill="x", pady=self.px(10))
+
+        def act(text, cmd, kind="plain"):
+            b = self.button(box, text, cmd, kind, 12)
+            b.config(anchor="w", bg=mix(CARD, FG, 0.13), fg=FG if kind == "plain" else SUN)
+            b.bind("<Enter>", lambda e: e.widget.config(bg=mix(CARD, FG, 0.24)))
+            b.bind("<Leave>", lambda e: e.widget.config(bg=mix(CARD, FG, 0.13)))
+            b.pack(fill="x", pady=self.px(3))
+        act(self.t("export_ics"), self.export_ics)
+        act(self.t("backup_out"), self.export_backup)
+        act(self.t("backup_in"), self.import_backup)
+        act(self.t("open_data"), lambda: subprocess.Popen(["explorer", APP_DIR]))
+        act(self.t("quit"), self.quit_app, "danger")
+        tk.Label(box, text="DeskCal %s" % __version__, bg=CARD, fg=DIM, font=self.f(10),
+                 anchor="w").pack(fill="x", pady=(self.px(8), self.px(4)))
+
+    # ---------- 내보내기 · 백업 ----------
+
+    def reveal(self, path):
+        """탐색기에서 그 파일을 골라 보여준다."""
+        if not self.float_mode:
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+
+    def export_ics(self, path=None):
+        """다른 캘린더 앱(Google · Outlook · Apple)에 넣을 수 있는 .ics 파일을 만든다."""
+        self.tt_commit()
+        text = build_ics(self.events, self.series, self.courses, self.tt, self.periods,
+                         self.anchor(), self.today, lambda k: self.t("exam_" + k))
+        show = path is None
+        path = path or os.path.join(documents_dir(), "DeskCal.ics")
+        try:
+            with open(path, "w", encoding="utf-8", newline="") as f:
+                f.write(text)
+        except OSError as e:
+            self.notice(self.t("save_fail", why=str(e)))
+            return None
+        if show:
+            self.reveal(path)
+        return path
+
+    def backup_data(self):
+        conf = {k: v for k, v in self.conf.items() if not k.startswith("update_")}
+        return {"events.json": self.events, "series.json": self.series,
+                "timetable.json": self.tt, "courses.json": self.courses, "config.json": conf}
+
+    def export_backup(self, path=None):
+        """일정·시간표·설정을 zip 하나로 묶는다 (다른 컴퓨터의 DeskCal 로 옮길 때)."""
+        self.tt_commit()
+        self.save_conf()
+        show = path is None
+        path = path or os.path.join(documents_dir(),
+                                    "DeskCal-backup-%s.zip" % self.today.strftime("%Y%m%d"))
+        try:
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+                for name, obj in self.backup_data().items():
+                    z.writestr(name, json.dumps(obj, ensure_ascii=False, indent=2))
+        except OSError as e:
+            self.notice(self.t("save_fail", why=str(e)))
+            return None
+        if show:
+            self.reveal(path)
+        return path
+
+    def import_backup(self, path=None, ask=True):
+        global FONT
+        if path is None:
+            path = filedialog.askopenfilename(
+                parent=self, initialdir=documents_dir(),
+                filetypes=[("DeskCal backup", "*.zip"), ("*", "*.*")])
+            if not path:
+                return False
+        data = read_backup(path)
+        if not data:
+            self.notice(self.t("backup_bad"))
+            return False
+        if ask and not self.confirm(self.t("backup_confirm"), self.t("restore")):
+            return False
+        # 지금 데이터를 따로 남겨 둔다 (되돌리기와 별개로, 껐다 켠 뒤에도 찾을 수 있게)
+        self.export_backup(os.path.join(
+            APP_DIR, "before-restore-%s.zip" % time.strftime("%Y%m%d-%H%M%S")))
+        self.push_undo()
+        if "events.json" in data and self.data_ok:
+            self.events = data["events.json"]
+            self.save()
+        if "series.json" in data and self.sr_ok:
+            self.series = data["series.json"]
+            self.save_series()
+        if "timetable.json" in data and self.tt_ok:
+            self.tt = data["timetable.json"]
+            self.save_tt()
+        if "courses.json" in data and self.cs_ok:
+            self.courses = data["courses.json"]
+            self.save_courses()
+        conf = data.get("config.json") or {}
+        for k in ("lang", "theme", "glass", "size", "compact", "color", "week_anchor",
+                  "periods", "weekend_tt"):
+            if k in conf:
+                self.conf[k] = conf[k]
+        if self.conf.get("lang") in TEXT:
+            self.lang = self.conf["lang"]
+        if self.conf.get("theme") in THEMES:
+            self.theme = self.conf["theme"]
+        if self.conf.get("glass") in GLASS:
+            self.glass = self.conf["glass"]
+        try:
+            self.size_idx = min(max(int(self.conf.get("size", self.size_idx)), 0),
+                                len(SIZES) - 1)
+        except (TypeError, ValueError):
+            pass
+        self.compact = bool(self.conf.get("compact", False))
+        if self.compact:
+            self.view = "cal"
+        self.color = pc(self.conf.get("color", self.color))
+        self.weekend_tt = bool(self.conf.get("weekend_tt", False))
+        self.periods = parse_periods(self.conf.get("periods") or PERIOD_TIMES)
+        FONT = pick_font(self, self.lang)
+        self._fonts.clear()
+        self.panel_mode = "day"
+        self.build()
+        self.ensure_on_screen()
+        self.save_conf()
+        log("백업을 불러왔다: %s" % os.path.basename(path))
+        if ask:
+            self.notice(self.t("backup_done"))
+        return True
+
+    def confirm(self, text, yes):
+        """예/취소를 묻는 창. 예를 누르면 True."""
+        top = self.dialog()
+        pad = self.px(18)
+        tk.Label(top, text=text, bg=CARD, fg=FG, font=self.f(12), anchor="w", justify="left",
+                 wraplength=self.px(400)).pack(fill="x", padx=pad, pady=(pad, 0))
+        out = []
+
+        def ok(_=None):
+            out.append(True)
+            top.destroy()
+        bar = tk.Frame(top, bg=CARD)
+        bar.pack(fill="x", padx=pad, pady=pad)
+        self.button(bar, self.t("cancel"), top.destroy, "plain", 11).pack(side="right")
+        self.button(bar, yes, ok, "primary", 11).pack(side="right", padx=(0, self.px(6)))
+        top.bind("<Return>", ok)
+        top.bind("<Escape>", lambda e: top.destroy())
+        self.place_dialog(top)
+        top.grab_set()
+        self.wait_window(top)
+        return bool(out)
+
+    # ---------- 새 버전 확인 ----------
+    # 하루 한 번 GitHub 에 최신 버전 번호만 묻는다 (보내는 정보 없음). 설정에서 끌 수 있고,
+    # 연결이 안 되면 조용히 넘어간다. 새 버전이 있으면 ≡ 에 점, 설정 맨 위에 받기 버튼.
+
+    def set_update_check(self, on):
+        self.conf["update_check"] = bool(on)
+        if not on and self.update_ver:
+            self.update_ver = None
+            self.conf.pop("update_latest", None)
+            title = self.title_text()
+            self.draw_header()
+            self.set_title(title)
+        self.save_conf()
+        self.render_panel()
+
+    def open_release(self):
+        os.startfile(RELEASES_PAGE)
+
+    def update_tick(self):
+        try:
+            last = float(self.conf.get("update_checked", 0) or 0)
+            if (self.conf.get("update_check", True) and not self._upd_busy
+                    and time.time() - last > 20 * 3600):
+                self._upd_busy = True
+
+                def work():
+                    try:
+                        self._upd_q.put(fetch_latest_version())
+                    except Exception:
+                        self._upd_q.put("")    # 연결 안 됨 (교내망·방화벽): 조용히 넘어간다
+                threading.Thread(target=work, daemon=True, name="update").start()
+            try:
+                found = self._upd_q.get_nowait()
+            except queue.Empty:
+                found = None
+            if found is not None:
+                self._upd_busy = False
+                self.apply_latest(found)
+        except Exception:
+            log("update_tick 예외:\n" + traceback.format_exc())
+        self._jobs["upd"] = self.after(3000 if self._upd_busy else 3600 * 1000,
+                                       self.update_tick)
+
+    def apply_latest(self, found):
+        """확인 결과를 반영한다. found: '1.2.3' 또는 ''(확인 실패)."""
+        now = time.time()
+        if not version_tuple(found):
+            self.conf["update_checked"] = now - 16 * 3600      # 4시간 뒤 다시
+        else:
+            self.conf["update_checked"] = now
+            self.conf["update_latest"] = found
+            newer = found if version_tuple(found) > version_tuple(__version__) else None
+            if newer != self.update_ver:
+                self.update_ver = newer
+                log("새 버전 확인: %s (지금 %s)" % (found, __version__))
+                if not self._drag:
+                    title = self.title_text()
+                    self.draw_header()         # ≡ 의 점만 바꾼다 (적던 글을 건드리지 않게)
+                    self.set_title(title)
+        save_json(CONF_FILE, self.conf)
 
     # ---------- 데이터 ----------
 
     def push_undo(self):
         self.undo_stack.append(json.dumps({"e": self.events, "t": self.tt,
-                                           "c": self.courses}, ensure_ascii=False))
+                                           "c": self.courses, "s": self.series},
+                                          ensure_ascii=False))
         if len(self.undo_stack) > 40:
             self.undo_stack.pop(0)
 
@@ -3151,9 +4833,11 @@ class DeskCal(tk.Tk):
         snap = json.loads(self.undo_stack.pop())
         self.events, self.tt = snap["e"], snap["t"]
         self.courses = snap.get("c", self.courses)
+        self.series = snap.get("s", self.series)
         self.save()
         self.save_tt()
         self.save_courses()
+        self.save_series()
         self.render()
         return "break"
 
@@ -3163,9 +4847,25 @@ class DeskCal(tk.Tk):
             self.entry_w.focus_set()
             return
         self.push_undo()
-        self.events.setdefault(key_of(self.selected), []).append(
-            {"title": t, "color": self.color, "done": False})
-        self.save()
+        tm = time_of(t)                        # "치과 3pm" → 15:00 (제목은 그대로)
+        span = self.range_span()
+        if span:                               # Shift+클릭으로 고른 기간
+            self.series.append({"title": t, "color": self.color,
+                                "start": key_of(span[0]), "end": key_of(span[1])})
+            self.save_series()
+            self.range_to = None
+        elif self.repeat:
+            self.series.append({"title": t, "color": self.color, "time": tm,
+                                "start": key_of(self.selected), "repeat": self.repeat})
+            self.save_series()
+            self.repeat = ""
+        else:
+            it = {"title": t, "color": self.color, "done": False}
+            if tm:
+                it["time"] = tm
+            self.events.setdefault(key_of(self.selected), []).append(it)
+            self.save()
+        self.entry_w.delete(0, "end")          # 다시 그릴 때 적던 글로 되살아나지 않게
         self.render()
         self.entry_w.focus_set()
 
@@ -3192,19 +4892,11 @@ class DeskCal(tk.Tk):
             self.render()
 
     def set_color(self, col):
-        # 화면을 다시 그리면 입력칸이 새로 만들어져 적던 내용이 날아간다.
-        # 색만 바꾸려던 건데 글이 사라지면 안 되므로 그대로 옮겨 담는다.
-        txt = ""
-        try:
-            txt = self.entry_w.get()
-        except Exception:
-            pass
+        # 적던 글은 render_panel 이 새 입력칸으로 옮겨 담는다.
         self.color = col
         self.conf["color"] = col
         self.render()
         try:
-            if txt:
-                self.entry_w.insert(0, txt)
             self.entry_w.focus_set()
             self.entry_w.icursor("end")
         except Exception:
@@ -3250,7 +4942,7 @@ class DeskCal(tk.Tk):
     def save_conf(self):
         self.conf.update({"x": self.winfo_x(), "y": self.winfo_y(), "size": self.size_idx,
                           "color": self.color, "lang": self.lang, "theme": self.theme,
-                          "glass": self.glass})
+                          "glass": self.glass, "compact": self.compact})
         save_json(CONF_FILE, self.conf)
 
     # ---------- 창 이동 · 메뉴 ----------
@@ -3276,22 +4968,36 @@ class DeskCal(tk.Tk):
 
     def drag_move(self, e):
         if self._drag:
-            self._drag_pos = (e.x_root - self._drag[0], e.y_root - self._drag[1])
-            self.geometry("+%d+%d" % self._drag_pos)
-            if self.glass_img:
-                self.move_glass()
+            pos = (e.x_root - self._drag[0], e.y_root - self._drag[1])
+            if pos == self._drag_pos:
+                return
+            self._drag_pos = pos
+            if not getattr(self, "_drag_job", None):   # 밀린 움직임은 한 번에 처리한다
+                self._drag_job = self.after_idle(self.drag_frame)
+
+    def drag_frame(self):
+        """창 이동 한 번. 유리를 먼저 새 자리에 맞춰 둔 뒤 창을 옮기고 곧바로 그린다.
+        (창을 먼저 옮기면 다시 그리기 전 한 순간 유리가 창과 같이 밀려 보여 덜컥거린다)"""
+        self._drag_job = None
+        if not self._drag or not self._drag_pos:
+            return
+        if self.glass_img:
+            self.move_glass()
+        self.geometry("+%d+%d" % self._drag_pos)
+        self.update_idletasks()
 
     def drag_end(self, _):
         if self._drag:
+            if getattr(self, "_drag_job", None):    # 마지막 움직임을 빠뜨리지 않는다
+                self.after_cancel(self._drag_job)
+                self.drag_frame()
             self._drag = None
             self.update_idletasks()
             self._drag_pos = None
             self.save_conf()
             if self.glass_img and self.window_pos() != self._drag_from:
-                if self.desk_fits():
-                    self.move_glass()          # 이미 맞는 바탕화면이 비친다
-                else:
-                    self.build()               # 놓은 자리 바탕이 달라 색을 다시 맞춘다
+                if not self.recolor_from_desk():
+                    self.build()               # 대비가 모자라다: 유리부터 다시 만든다
 
     def popup(self, m, e):
         # grab 을 놓지 않으면 창이 입력을 먹은 채 "응답 없음" 으로 강제 종료된다
@@ -3307,47 +5013,6 @@ class DeskCal(tk.Tk):
     def radio(self, menu, label, on, cmd):
         menu.add_command(label=("●  " if on else "     ") + label, command=cmd)
 
-    def menu(self, e):
-        m = self.new_menu(self)
-        lang = self.new_menu(m)
-        for code in TEXT:
-            self.radio(lang, TEXT[code]["lang_name"], code == self.lang,
-                       lambda c=code: self.set_lang(c))
-        m.add_cascade(label=self.t("lang"), menu=lang)
-
-        theme = self.new_menu(m)
-        for name in ("dark", "light"):
-            self.radio(theme, self.t(name), name == self.theme,
-                       lambda n=name: self.set_theme(n))
-        m.add_cascade(label=self.t("theme"), menu=theme)
-
-        bgm = self.new_menu(m)
-        for key in ("soft", "clear", "off"):
-            self.radio(bgm, self.t("glass_" + key), key == self.glass,
-                       lambda k=key: self.set_glass(k))
-        m.add_cascade(label=self.t("glass"), menu=bgm)
-
-        sizes = self.new_menu(m)
-        for i, (ww, hh) in enumerate(SIZES):
-            self.radio(sizes, "%s  (%d×%d)" % (self.t("sizes")[i], ww, hh),
-                       i == self.size_idx, lambda k=i: self.set_size(k))
-        m.add_cascade(label=self.t("size"), menu=sizes)
-
-        wk = self.new_menu(m)
-        odd = self.is_odd_week(self.today)
-        self.radio(wk, self.t("set_odd"), odd, lambda: self.set_week_kind(True))
-        self.radio(wk, self.t("set_even"), not odd, lambda: self.set_week_kind(False))
-        m.add_cascade(label=self.t("parity"), menu=wk)
-        self.radio(m, self.t("weekend_tt"), self.weekend_tt, self.toggle_weekend_tt)
-
-        on = autostart_enabled()
-        self.radio(m, self.t("autostart"), on, lambda: self.set_autostart_pref(not on))
-        m.add_separator()
-        m.add_command(label=self.t("open_data"),
-                      command=lambda: subprocess.Popen(["explorer", APP_DIR]))
-        m.add_command(label=self.t("quit"), command=self.quit_app)
-        self.popup(m, e)
-
     def color_menu(self, e, idx):
         if idx >= len(self.items_today()):
             return
@@ -3356,6 +5021,12 @@ class DeskCal(tk.Tk):
             m.add_command(label="██████", foreground=col, activeforeground=col,
                           command=lambda c=col, i=idx: self.apply_color(i, c))
         self.popup(m, e)
+
+    def init_autostart(self):
+        """처음 켤 때는 '윈도우 시작 시 실행'을 켜 둔다. 메뉴에서 끈 뒤에는 다시 켜지 않는다."""
+        if "autostart" not in self.conf:
+            self.set_autostart_pref(True)
+
 
     @property
     def n_days(self):
@@ -3371,15 +5042,316 @@ class DeskCal(tk.Tk):
             self.tt_multi = {(di, p) for di, p in self.tt_multi if di < self.n_days}
         self.render()
 
-    def init_autostart(self):
-        """처음 켤 때는 '윈도우 시작 시 실행'을 켜 둔다. 메뉴에서 끈 뒤에는 다시 켜지 않는다."""
-        if "autostart" not in self.conf:
-            self.set_autostart_pref(True)
-
     def set_autostart_pref(self, on):
         set_autostart(on)
         self.conf["autostart"] = on            # 사용자가 고른 값을 기억한다
         self.save_conf()
+
+    def isop_conf(self):
+        """authCode from DPAPI in isop.json (appKey/appSecret hidden in native module)."""
+        if not HAS_ISOP_CLIENT:
+            log("ISOP secure native module not loaded")
+            return None
+        conf, ok = load_json(ISOP_FILE, {})
+        if not ok:
+            return None
+        raw = conf.get("authCode", "")
+        auth_code = ""
+        if raw:
+            try:
+                auth_code = _dpapi_unprotect(bytes.fromhex(raw)).decode("utf-8")
+            except Exception:
+                if len(raw) == 32 and all(c in "0123456789abcdefABCDEF" for c in raw):
+                    auth_code = raw
+                else:
+                    auth_code = ""
+        return {
+            "user": conf.get("user", ""),
+            "authCode": auth_code,
+            "authDate": conf.get("authDate", ""),
+        }
+
+    def isop_mail_gate(self, user):
+        """인증 메일 남용 방지: 전체 쿨다운 + 학번당 하루 횟수. 막히면 안내 문구, 통과면 None."""
+        data, _ = load_json(ISOP_THROTTLE_FILE, {})
+        left = ISOP_MAIL_COOLDOWN - (time.time() - data.get("last", 0))
+        if left > 0:
+            return self.t("isop_cooldown", s=int(left) + 1)
+        if (data.get("day") == self.today.isoformat()
+                and data.get("counts", {}).get(user, 0) >= ISOP_MAIL_DAILY_CAP):
+            return self.t("isop_daily_cap", n=ISOP_MAIL_DAILY_CAP)
+        return None
+
+    def isop_mail_record(self, user):
+        """인증 메일을 실제로 보낸 뒤 호출 — 보낸 시각과 학번별 횟수를 남긴다."""
+        data, _ = load_json(ISOP_THROTTLE_FILE, {})
+        if data.get("day") != self.today.isoformat():
+            data["day"], data["counts"] = self.today.isoformat(), {}
+        data["last"] = time.time()
+        data.setdefault("counts", {})[user] = data.get("counts", {}).get(user, 0) + 1
+        save_json(ISOP_THROTTLE_FILE, data)
+
+    def isop_authorize(self, conf):
+        """학번 → 북대 메일 인증번호 → 권한 코드(6개월). 성공하면 isop.json 에 저장."""
+        if not HAS_ISOP_CLIENT:
+            self.notice(self.t("isop_failed", why="Secure client module missing"))
+            return None
+        user = self.ask_text(self.t("isop_ask_user"), conf.get("user", ""))
+        if not user:
+            return None
+        user = user.strip()
+        gate = self.isop_mail_gate(user)
+        if gate:
+            self.notice(gate)
+            return None
+
+        base = [
+            ("appKey", _isop_client.get_app_key()),
+            ("clientIp", isop_client_ip()),
+            ("svcId", ISOP_SVC),
+            ("timestamp", str(int(time.time() * 1000))),
+            ("user", user),
+        ]
+        try:
+            r = isop_call("oauth/validcode2mail/v2", base, sort=True)
+        except Exception as e:
+            log("ISOP 인증 메일 통신 오류: %s" % e)
+            self.notice(self.t("isop_failed", why=str(e)))
+            return None
+
+        if not r.get("success"):
+            log("ISOP 인증번호 요청 실패: %s" % {k: v for k, v in r.items() if k != "msg"})
+            self.notice(self.t("isop_failed", why=r.get("msg") or str(r)))
+            return None
+        self.isop_mail_record(user)
+
+        code = self.ask_text(self.t("isop_ask_code"))
+        if not code:
+            return None
+
+        pairs = [p for p in base if p[0] != "timestamp"] + [
+            ("timestamp", str(int(time.time() * 1000))),
+            ("validCode", code.strip()),
+        ]
+        try:
+            r = isop_call("oauth/authcode/v2", pairs, sort=True)
+        except Exception as e:
+            log("ISOP 인증코드 통신 오류: %s" % e)
+            self.notice(self.t("isop_failed", why=str(e)))
+            return None
+
+        if not r.get("success") or not r.get("authCode"):
+            log("ISOP 권한 코드 받기 실패: %s" % {k: v for k, v in r.items() if k != "authCode"})
+            self.notice(self.t("isop_failed", why=r.get("msg") or str(r)))
+            return None
+
+        try:
+            protected = _dpapi_protect(r["authCode"].encode("utf-8")).hex()
+        except Exception:
+            protected = r["authCode"]
+        save_json(ISOP_FILE, {
+            "user": user,
+            "authCode": protected,
+            "authDate": self.today.isoformat(),
+        })
+        conf.update(user=user, authCode=r["authCode"], authDate=self.today.isoformat())
+        log("ISOP 권한 코드 받음 (6개월 유효)")
+        return conf
+
+    def isop_fetch(self, conf):
+        if not HAS_ISOP_CLIENT:
+            return {"flag": False, "msg": "Client missing"}
+        pairs = [
+            ("user", conf["authCode"]),
+            ("appKey", _isop_client.get_app_key()),
+            ("timestamp", str(int(time.time() * 1000))),
+        ]
+        return isop_call("pro/student/coursetableroom", pairs, sort=False)
+
+    def import_isop(self, conf):
+        try:
+            if not conf.get("authCode"):
+                conf = self.isop_authorize(conf)
+                if not conf:
+                    return
+            try:
+                resp = self.isop_fetch(conf)
+            except Exception as e:
+                log("기존 권한 코드로 课表 가져오기 실패, 재인증 시도: %s" % e)
+                conf = self.isop_authorize(dict(conf, authCode=""))
+                if not conf:
+                    return
+                resp = self.isop_fetch(conf)
+            if not isop_ok(resp):                        # 권한 코드가 만료됐을 수 있다
+                log("ISOP 课表 요청 실패, 다시 인증: %s" % str(resp)[:200])
+                conf = self.isop_authorize(dict(conf, authCode=""))
+                if not conf:
+                    return
+                resp = self.isop_fetch(conf)
+        except Exception as e:
+            log("ISOP 요청 오류:\n" + traceback.format_exc())
+            err_msg = str(e)
+            if hasattr(e, "reason"):
+                err_msg = str(e.reason)
+            self.notice(self.t("isop_failed", why=f"{self.t('isop_net')}\n({err_msg})"))
+            return
+        if not isop_ok(resp):
+            self.notice(self.t("isop_failed", why=resp.get("msg") or str(resp)[:120]))
+            return
+        log("ISOP 课表 받음: 과목 %d개" % len(resp.get("list") or []))
+        for c in resp.get("list") or []:
+            if (c.get("kcmc") or "").strip() and not isop_entries(c):
+                raw = [{k: j.get(k) for k in ("xq", "kssj", "jssj", "dsz", "qsz", "jsz")}
+                       for j in (c.get("jsap") or [])]
+                log("ISOP: 시간을 읽지 못한 과목 %s (%s) jsap=%r"
+                    % (c.get("kcmc"), c.get("zxjhbh") or "", raw))
+        self.review_pku(resp)                            # 바뀐 점을 보여주고 고른 것만 적용
+
+
+
+    def import_pku(self):
+        """정식 등록한 ISOP 앱 설정(data/isop.json)이 있으면 그걸로 가져온다. 없으면 설정에
+        저장된 课表 파일(pku_import_file)에서, 그것도 없으면 '준비 중' 안내."""
+        conf = self.isop_conf()
+        if conf:
+            self.import_isop(conf)
+            return
+        path = self.conf.get("pku_import_file")
+        if not (path and os.path.exists(path)):
+            self.notice(self.t("pku_paused"))
+            return
+        try:
+            with open(path, encoding="utf-8-sig", errors="replace") as f:
+                raw = f.read()
+            resp = (parse_pku_html(raw) if path.lower().endswith((".html", ".htm"))
+                    else json.loads(raw))
+        except (OSError, ValueError):
+            log("课表 파일을 읽지 못함:\n" + traceback.format_exc())
+            self.notice(self.t("pku_empty"))
+            return
+        self.review_pku(resp)
+
+    def fmt_cells(self, cells):
+        """{(요일, 교시)} → '수 3–4교시, 금 5–6교시' (이어진 교시는 묶는다)."""
+        out = []
+        for di in sorted({d for d, _ in cells}):
+            ps = sorted(p for d, p in cells if d == di)
+            start = prev = ps[0]
+            for p in ps[1:] + [None]:
+                if p is not None and p == prev + 1:
+                    prev = p
+                    continue
+                out.append(self.t("periods_fmt", wd=self.t("wd")[di], a=start,
+                                  b=("" if start == prev else "–%d" % prev)))
+                if p is not None:
+                    start = prev = p
+        return ", ".join(out)
+
+    def pku_changes(self, resp):
+        """가져온 课表와 지금 시간표의 차이. [{kind, title, text, on, ...}] 와 못 넣은 수."""
+        slots, skipped = isop_slots(resp, n_days=7) if "list" in resp else parse_pku_table(resp, n_days=7)
+        if any(di >= 5 for di, _ in slots.keys()) and not self.weekend_tt:
+            self.weekend_tt = True
+            self.conf["weekend_tt"] = True
+            self.save_conf()
+        portal = {}
+        for (di, p), cs in sorted(slots.items()):
+            skipped += len(cs) - 1                   # 한 칸에는 한 과목만 넣을 수 있다
+            c = cs[0]
+            portal.setdefault(c["title"], {"cells": {}, "exam": None})
+            portal[c["title"]]["cells"][(di, p)] = (c["room"], c["week"])
+            portal[c["title"]]["exam"] = portal[c["title"]]["exam"] or c["exam"]
+        mine = {}
+        for key, it in self.tt.items():
+            di, p = (int(v) for v in key.split("-"))
+            mine.setdefault(it.get("title"), {})[(di, p)] = (it.get("room", ""),
+                                                             it.get("week", "all"))
+        wk = {"all": self.t("chip_all"), "odd": self.t("chip_odd"), "even": self.t("chip_even")}
+        out = []
+        for title, info in portal.items():
+            new, old = info["cells"], mine.get(title)
+            if old:                                  # 학교 자료에 교실이 비면 (체육 등) 직접 적은 교실 유지
+                mine_room = next((r for r, _ in old.values() if r), "")
+                new = info["cells"] = {k: (r or old.get(k, (mine_room,))[0] or mine_room, w)
+                                       for k, (r, w) in new.items()}
+            if old is None:
+                out.append({"kind": "set", "title": title, "cells": new, "on": True,
+                            "text": self.t("chg_new", t=title, cells=self.fmt_cells(new))})
+            elif new != old:
+                parts = []
+                if set(new) != set(old):
+                    parts.append(self.t("chg_time", a=self.fmt_cells(old), b=self.fmt_cells(new)))
+                rooms_o = sorted({r for r, _ in old.values()})
+                rooms_n = sorted({r for r, _ in new.values()})
+                if rooms_o != rooms_n:
+                    parts.append(self.t("chg_room", a=" / ".join(rooms_o) or "—",
+                                        b=" / ".join(rooms_n) or "—"))
+                weeks_o = sorted({w for _, w in old.values()})
+                weeks_n = sorted({w for _, w in new.values()})
+                if weeks_o != weeks_n:
+                    parts.append(self.t("chg_week", a=" / ".join(wk[w] for w in weeks_o),
+                                        b=" / ".join(wk[w] for w in weeks_n)))
+                if not parts:                        # 칸마다 강의실·주차가 엇갈리게 바뀐 경우
+                    parts.append(self.t("chg_detail"))
+                out.append({"kind": "set", "title": title, "cells": new, "on": True,
+                            "text": "%s: %s" % (title, ", ".join(parts))})
+            if info["exam"]:
+                d_new, tm = info["exam"]
+                cur = self.courses.get(title, {})
+                d_cur = parse_date(cur.get("fin_date", ""))
+                if not d_cur:                        # 비어 있을 때만 기본으로 채운다
+                    out.append({"kind": "exam", "title": title, "exam": info["exam"], "on": True,
+                                "text": self.t("chg_exam_new", t=title,
+                                               d=self.btn_date(parse_date(d_new)), tm=tm)})
+                elif d_cur.isoformat() != d_new:     # 직접 적은 날짜와 다르면 고를 수 있게만
+                    out.append({"kind": "exam", "title": title, "exam": info["exam"], "on": False,
+                                "text": self.t("chg_exam_diff", t=title,
+                                               a=self.btn_date(d_cur),
+                                               b=self.btn_date(parse_date(d_new)))})
+        for title, cells in mine.items():
+            if title not in portal:                  # 门户에 없는 수업: 지우는 건 직접 골라야
+                out.append({"kind": "gone", "title": title, "on": False,
+                            "text": self.t("chg_gone", t=title, cells=self.fmt_cells(cells))})
+        return out, skipped
+
+    def apply_changes(self, changes):
+        """고른 변경만 적용한다. Ctrl+Z 한 번으로 전부 되돌린다."""
+        if not changes:
+            return
+        self.tt_commit()
+        self.push_undo()
+        colors = {}
+        for it in self.tt.values():
+            colors.setdefault(it.get("title"), it.get("color"))
+        free = [c for c in PALETTE if c not in colors.values()] or PALETTE
+        n_new = 0
+        for ch in changes:
+            title = ch["title"]
+            if ch["kind"] in ("set", "gone"):
+                for k in [k for k, it in self.tt.items() if it.get("title") == title]:
+                    del self.tt[k]
+                if ch["kind"] == "gone":
+                    self.courses.pop(title, None)
+            if ch["kind"] == "set":
+                if not colors.get(title):
+                    colors[title] = free[n_new % len(free)]
+                    n_new += 1
+                for (di, p), (room, week) in ch["cells"].items():
+                    self.tt[self.tt_key(di, p)] = {"title": title, "room": room,
+                                                   "color": colors[title], "week": week}
+            elif ch["kind"] == "exam":
+                info = self.courses.setdefault(title, {})
+                info["fin_date"], info["fin_time"] = ch["exam"]
+                info.pop("fin_done", None)
+        self.save_tt()
+        self.save_courses()
+        self.render()
+        log("课表 변경 %d개 적용" % len(changes))
+
+    def apply_pku(self, resp):
+        """기본으로 체크된 변경을 모두 적용한다 (확인 창 없이)."""
+        changes, _ = self.pku_changes(resp)
+        self.apply_changes([c for c in changes if c["on"]])
 
     def screen_rect(self):
         """위젯의 실제 화면 위치 (x, y, 너비, 높이). 바탕화면에 붙어 있으면 winfo_root* 가
@@ -3434,6 +5406,94 @@ class DeskCal(tk.Tk):
                 top.lift()
                 top.after(400, tick)
         tick()
+
+    def ask_text(self, prompt, initial=""):
+        """위젯 위 가운데에 뜨는 입력 창 (기본 askstring 은 작고 엉뚱한 곳에 뜬다)."""
+        top = self.dialog()
+        pad = self.px(18)
+        tk.Label(top, text=prompt, bg=CARD, fg=FG, font=self.f(13), anchor="w", justify="left",
+                 wraplength=self.px(380)).pack(fill="x", padx=pad, pady=(pad, self.px(10)))
+        var = tk.StringVar(master=top, value=initial)
+        ent = tk.Entry(top, textvariable=var, bg=SUNK, fg=FG, insertbackground=FG, relief="flat",
+                       font=self.f(15), highlightthickness=1, highlightbackground=LINE,
+                       highlightcolor=ACCENT, width=24)
+        ent.pack(fill="x", padx=pad, ipady=self.px(6))
+        out = []
+
+        def ok(_=None):
+            out.append(var.get())
+            top.destroy()
+        bar = tk.Frame(top, bg=CARD)
+        bar.pack(fill="x", padx=pad, pady=pad)
+        self.button(bar, self.t("cancel"), top.destroy, "plain", 11).pack(side="right")
+        self.button(bar, self.t("ok"), ok, "primary", 11).pack(side="right", padx=(0, self.px(6)))
+        ent.bind("<Return>", ok)
+        top.bind("<Escape>", lambda e: top.destroy())
+        self.place_dialog(top)
+        ent.focus_set()
+        ent.icursor("end")
+        top.grab_set()
+        self.wait_window(top)
+        return out[0] if out else None
+
+    def review_pku(self, resp):
+        """바뀐 점을 보여주고, 체크한 것만 적용한다."""
+        changes, skipped = self.pku_changes(resp)
+        info = []
+        if "list" in resp:
+            info.append(self.t("pku_received", n=len(resp.get("list") or [])))
+            missing = isop_unscheduled(resp)
+            if missing:
+                info.append(self.t("pku_unscheduled", n=len(missing), names="、".join(missing)))
+        if not changes:
+            self.notice("\n\n".join([self.t("pku_up_to_date")] + info))
+            return
+        if self.view != "tt":
+            self.set_view("tt")
+        top = self.dialog()
+        pad = self.px(16)
+        tk.Label(top, text=self.t("pku_review_title", n=len(changes)), bg=CARD, fg=FG,
+                 font=self.f(15, True), anchor="w").pack(fill="x", padx=pad, pady=(pad, 0))
+        tk.Label(top, text=self.t("pku_review_hint"), bg=CARD, fg=MUTED, font=self.f(11),
+                 anchor="w", justify="left").pack(fill="x", padx=pad, pady=(self.px(4), self.px(10)))
+        body = tk.Frame(top, bg=CARD)
+        body.pack(fill="both", expand=True, padx=pad)
+        rows = []
+        for ch in changes:
+            v = tk.BooleanVar(master=top, value=ch["on"])
+            cb = tk.Checkbutton(body, text=ch["text"], variable=v, bg=CARD, fg=FG,
+                                activebackground=CARD, activeforeground=FG, selectcolor=SUNK,
+                                font=self.f(12), anchor="w", justify="left", cursor="hand2",
+                                wraplength=self.px(560), highlightthickness=0, bd=0)
+            cb.pack(fill="x", pady=self.px(3))
+            rows.append((ch, v))
+        if skipped:
+            tk.Label(top, text=self.t("pku_skipped", k=skipped).strip(), bg=CARD, fg=DIM,
+                     font=self.f(10), anchor="w").pack(fill="x", padx=pad, pady=(self.px(6), 0))
+        for line in info:                      # 받은 과목 수 · 시간을 못 읽은 과목
+            tk.Label(top, text=line, bg=CARD, fg=DIM, font=self.f(10), anchor="w", justify="left",
+                     wraplength=self.px(560)).pack(fill="x", padx=pad, pady=(self.px(6), 0))
+        bar = tk.Frame(top, bg=CARD)
+        bar.pack(fill="x", padx=pad, pady=pad)
+
+        def set_all(val):
+            for _, v in rows:
+                v.set(val)
+
+        def apply():
+            chosen = [ch for ch, v in rows if v.get()]
+            top.destroy()
+            self.apply_changes(chosen)
+            if chosen:
+                self.set_status("pku_applied")
+        self.button(bar, self.t("sel_all"), lambda: set_all(True), "plain", 10).pack(side="left")
+        self.button(bar, self.t("sel_none"), lambda: set_all(False), "plain", 10
+                    ).pack(side="left", padx=(self.px(6), 0))
+        self.button(bar, self.t("cancel"), top.destroy, "plain", 11).pack(side="right")
+        self.button(bar, self.t("apply_sel"), apply, "primary", 11
+                    ).pack(side="right", padx=(0, self.px(6)))
+        self.place_dialog(top)
+        self._review = top
 
     def quit_app(self):
         self.tt_commit()
