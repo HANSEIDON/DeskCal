@@ -26,8 +26,6 @@ DeskCal sits on your Windows desktop, just above the wallpaper. Deadlines, exams
 your computer, and it needs no account.
 
 > **New in 1.3.0 — Repeating & multi-day events, natural event times, .ics calendar export, compact mode, and zero-flicker UI.** DeskCal is powered by Peking University's official data platform (ISOP), so it can load your real timetable and exam dates straight from the university instead of you typing them in.
->
-> 🍏 **Note on macOS Support:** I originally planned to release the macOS version alongside 1.3.0. However, due to macOS-specific display and window behavior bugs currently being fixed, the Mac release is taking a little more time. I sincerely apologize to everyone who has been waiting — I am polishing it up and will release the macOS build separately as soon as it's rock-solid!
 
 ![Calendar view, dark theme](docs/calendar-dark.png)
 
@@ -53,7 +51,7 @@ your computer, and it needs no account.
 
 ## 🚀 Install
 
-> **Windows 10 / 11.** (macOS version is currently being refined and coming soon).
+> **Windows 10 / 11 only.** DeskCal uses Windows APIs and won't run on macOS or Linux.
 
 ### Option 1: Download the app (recommended)
 
