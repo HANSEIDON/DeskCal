@@ -8,8 +8,6 @@ on:
         required: false
         default: 'feature/macos-support'
   push:
-    tags:
-      - 'v*'
     branches:
       - feature/macos-support
       - feature/macos-isop-import
