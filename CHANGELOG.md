@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Several classes in one slot.** A period can now hold more than one class, for example
+  one on odd weeks and another on even weeks. Select the class, click **+ Another class
+  here**, and type the other course. The classes are stacked like cards: the one that
+  meets this week is in front, and clicking the card peeking out behind it brings that class
+  forward. Classes that don't meet this week are dashed (issue #2).
+- **Week ranges.** Each class has a weeks box: `1-8` for a half-semester course, `1,3,5-7`
+  for any set of weeks, blank for the whole semester (issue #2).
+- **Week numbers.** **⚙ → This week** sets which week of the semester it is. Odd / even
+  follows the number, the timetable title shows it, and the calendar shows week numbers
+  down the left side.
+
+### Changed
+
+- **PKU timetable import** keeps every class when two share a time slot (it used to keep
+  only the first), and reads each class's first and last week, so half-semester courses
+  come in with their range (issue #2).
+- `.ics` export follows week ranges.
+
+### Fixed
+
+- The class panel on the Timetable tab scrolls when its content is taller than the widget
+  (it used to be cut off at the bottom).
+- **Start with Windows** repairs itself. If the startup entry went missing (for example
+  after uninstalling another copy) or the app folder was moved, DeskCal registers it again
+  the next time it starts.
+
 ## 1.3.0 — 2026-11-11
 
 ### Added

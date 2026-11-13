@@ -38,7 +38,7 @@ your computer, and it needs no account.
   Add a time ("Dentist 3pm"), repeat it weekly, or stretch it over several days.
 - ⏰ **Upcoming deadlines** with D-day badges. Orange within a week, red for today and tomorrow.
 - 🗓️ **Timetable**: 5-day (Mon–Fri) or 7-day (Mon–Sun) view, 12 periods on PKU's schedule. The current class is highlighted.
-- 🔁 **Odd / even weeks** (单周 / 双周). Classes not meeting this week are shown dashed.
+- 🔁 **Odd / even weeks and week ranges** (单周 / 双周, `1-8`, `1,3,5`). One slot can hold different classes on different weeks; classes not meeting this week are shown dashed.
 - 📝 **Exams on the calendar**: midterm, final and project deadlines per course appear on the
   calendar and in Upcoming.
 - 🪟 **Always on the desktop**, even after Win+D. Frosted-glass look, dark and light themes.
@@ -129,8 +129,10 @@ and nothing is uploaded.
 | Undo | Ctrl+Z |
 | Add a class | **Timetable** → click a cell → type the course name (saves automatically) |
 | Odd / even-week class | **Every / Odd / Even** in the side panel |
+| Half-semester or custom weeks | Type `1-8` or `1,3,5-7` in the weeks box (blank = whole semester) |
+| Two classes in one slot | Select the class → **+ Another class here** |
 | Exam dates | Select a class → **Exams · Deadlines**. They show on the calendar as squares |
-| Set which week is odd | **⚙ → Odd / even week** |
+| Set the week of the semester | **⚙ → This week**, then **−** / **+** (odd / even follows the number) |
 
 Settings also has language, theme, background, size (including **Compact**), export and
 backup. After two idle minutes, the calendar jumps back to today.

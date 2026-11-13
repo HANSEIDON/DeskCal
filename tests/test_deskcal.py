@@ -1232,6 +1232,103 @@ app.apply_latest("")
 check(app.update_ver is None, "확인에 실패해도 조용히 넘어감")
 app.destroy()
 
+
+print("\n== 주차 범위 · 한 칸의 여러 수업 (이슈 #2) ==")
+PW = deskcal.parse_weeks
+check(PW("1-8") == set(range(1, 9)) and PW("第1~8周") == set(range(1, 9))
+      and PW("1,3，5-7") == {1, 3, 5, 6, 7} and PW("") == set(), "주차 범위 읽기: 1-8 · 第1~8周 · 1,3,5-7")
+check(PW("abc") is None and PW("8-1") is None and PW("0-3") is None, "못 읽는 주차는 거절")
+check(deskcal.norm_weeks("1,2,3,5") == "1-3,5" and deskcal.norm_weeks("9~12周") == "9-12", "주차 범위 정리")
+JW = lambda xq, a, b, dsz, q, z: {"xq": xq, "kssj": a, "jssj": b, "skjs": "理教107", "dsz": dsz,
+                                 "qsz": q, "jsz": z}
+resp2 = {"flag": True, "list": [
+    {"kcmc": "单周课", "ksap": [], "jsap": [JW("2", "3", "4", "单周", "1", "16")]},
+    {"kcmc": "双周课", "ksap": [], "jsap": [JW("2", "3", "4", "双周", "1", "16")]},
+    {"kcmc": "前半学期", "ksap": [], "jsap": [JW("4", "1", "2", "每周", "1", "8")]},
+    {"kcmc": "后半学期", "ksap": [], "jsap": [JW("4", "1", "2", "每周", "9", "16")]},
+    {"kcmc": "整学期", "ksap": [], "jsap": [JW("1", "1", "2", "每周", "1", "16")]},
+]}
+app, d = fresh()
+changes, skipped = app.pku_changes(resp2)
+check(skipped == 0 and len(changes) == 5, "같은 시간의 수업을 버리지 않음 (못 넣은 수 %d, 변경 %d)" % (skipped, len(changes)))
+app.apply_changes(changes)
+CI = lambda key: deskcal.cell_items(app.tt, key)
+check([x["title"] for x in CI("1-3")] == ["单周课", "双周课"] and CI("1-3")[0]["week"] == "odd"
+      and CI("1-3")[1]["week"] == "even", "같은 시간의 单周·双周 수업을 둘 다 가져옴")
+check([x.get("weeks") for x in CI("3-1")] == ["1-8", "9-16"], "반 학기 수업의 시작·끝 주를 가져옴")
+check("weeks" not in app.tt["0-1"] and "more" not in app.tt["0-1"],
+      "학기 내내 듣는 수업 하나뿐인 칸은 예전 형식 그대로")
+check(app.pku_changes(resp2)[0] == [], "다시 가져오면 바뀐 곳이 없음")
+check(app.week_no(app.today) is None, "주차 번호는 정하기 전엔 모름")
+app.set_week_no(3)
+check(app.week_no(app.today) == 3 and app.is_odd_week(app.today), "第3周 = 单周")
+check(app.shown_item("1-3")["title"] == "单周课" and app.shown_item("3-1")["title"] == "前半学期",
+      "3주차: 单周 수업과 전반 학기 수업을 보여줌")
+app.set_week_no(10)
+check(not app.is_odd_week(app.today) and app.shown_item("1-3")["title"] == "双周课"
+      and app.shown_item("3-1")["title"] == "后半学期", "10주차: 双周 수업과 후반 학기 수업을 보여줌")
+thu = app.monday_of(app.today) + dt.timedelta(days=3)
+check([it["title"] for _, _, it in app.classes_on(thu)] == ["后半学期"], "그 날 수업에도 주차 범위를 적용")
+app.set_week_kind(True)
+check(app.week_no(app.today) == 11, "单/双을 바꾸면 주차 번호가 한 주 밀림")
+app.set_week_no(10)
+app.set_view("tt")
+app.tt_sel = (3, 1)
+app.bring_front("3-1", app.shown_item("3-1"))
+app.render()
+check(app.tt_title.get() == "后半学期" and app.tt_weeks_e.get() == "9-16", "보이는 수업이 패널에 뜸")
+app.tt_weeks_e.delete(0, "end")
+app.tt_weeks_e.insert(0, "9~12周")
+app.tt_commit()
+check(CI("3-1")[0].get("weeks") == "9-12" and CI("3-2")[0].get("weeks") == "9-12"
+      and [x["title"] for x in CI("3-1")] == ["后半学期", "前半学期"], "주차 범위를 직접 고침 (같은 칸의 다른 수업은 그대로)")
+app.tt_weeks_e.delete(0, "end")
+app.tt_weeks_e.insert(0, "봄")
+app.tt_commit()
+check(CI("3-1")[0].get("weeks") == "9-12", "못 읽는 주차를 적으면 저장하지 않음")
+app.tt_sel = (0, 1)
+app.render()
+app.tt_add_alt()
+check(app._tt_adding and app.tt_title.get() == "", "'이 시간에 다른 수업' → 빈 입력")
+app.tt_title.insert(0, "手动添加")
+app.tt_commit()
+check([x["title"] for x in CI("0-1")] == ["手动添加", "整学期"]
+      and [x["title"] for x in CI("0-2")] == ["手动添加", "整学期"] and not app._tt_adding,
+      "직접 추가한 수업이 같은 블록의 모든 칸에 들어감")
+check("手动添加" in app.active_courses() and "整学期" in app.active_courses(), "추가 수업도 과목 목록에 있음")
+app.tt_pick_alt(1)
+check(app.tt_title.get() == "整学期" and CI("0-1")[0]["title"] == "整学期", "칩을 눌러 고칠 수업을 바꿈")
+app.update()
+st = next(x for x in app._tt_stacks if x[0] == 0 and x[1] == 1)
+check(len(app.cal.find_withtag("back")) >= 3 and st[3][2] < st[4][2] and st[3][3] < st[4][3],
+      "수업이 겹친 칸은 뒤 카드가 오른쪽 아래로 삐져나옴")
+
+
+class Ev:
+    pass
+
+
+ev = Ev()
+ev.x, ev.y = st[4][2] - 1, (st[4][1] + st[4][3]) / 2       # 삐져나온 오른쪽 가장자리
+app.on_tt_click(ev)
+check(app.tt_title.get() == "手动添加" and CI("0-1")[0]["title"] == "手动添加",
+      "뒤 카드를 누르면 그 수업이 앞으로 나옴")
+ev.x = (st[3][0] + st[3][2]) / 2                            # 앞 카드 가운데
+app.on_tt_click(ev)
+check(app.tt_title.get() == "手动添加", "앞 카드를 누르면 그대로")
+app.tt_pick_alt(1)
+app.tt_delete()
+check([x["title"] for x in CI("0-1")] == ["手动添加"], "수업 하나를 지우면 같은 칸의 다른 수업이 남음")
+app.undo()
+check(len(CI("0-1")) == 2, "Ctrl+Z 로 되돌림")
+ics = deskcal.build_ics(app.events, app.series, app.courses, app.tt, app.periods, app.anchor(),
+                        app.today, lambda k: app.t("exam_" + k), week1=app.week1())
+check(ics.count("SUMMARY:后半学期") == 3 and ics.count("SUMMARY:前半学期") == 0
+      and ics.count("SUMMARY:单周课") == 1 and ics.count("SUMMARY:双周课") == 1,
+      ".ics: 주차 범위가 있는 수업은 남은 주만 (后半 %d, 前半 %d)"
+      % (ics.count("SUMMARY:后半学期"), ics.count("SUMMARY:前半学期")))
+app.destroy()
+
 # ------------------------------------------------------------------
 n_fail = RESULTS.count(False)
 print("\n%d개 중 %d개 통과%s" % (len(RESULTS), len(RESULTS) - n_fail,

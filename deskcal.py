@@ -507,6 +507,13 @@ def pick_font(root, lang):
 TEXT = {
     "ko": {
         "lang_name": "한국어",
+        "week_n": "{n}주차", "week_now": "이번 주 (학기 몇 번째 주인지)",
+        "week_unset_hint": "+ 를 눌러 이번 주가 몇 주차인지 정하면 '1-8주' 같은 주차 범위가 맞게 표시돼요.",
+        "weeks_hint": "예: 1-8 또는 1,3,5 · 비우면 학기 내내",
+        "week_bad": "주차를 읽지 못했어요 (예: 1-8 또는 1,3,5)",
+        "week_need_no": "주차 범위를 쓰려면 설정에서 이번 주가 몇 주차인지 정해 주세요.",
+        "tt_add_alt": "+ 이 시간에 다른 수업", "tt_new_chip": "새 수업",
+        "tt_add_hint": "같은 시간에 다른 주(单周·双周, 1-8주 등)에 듣는 수업을 추가해요. 과목 이름을 적으면 저장돼요.",
         "settings": "설정", "compact": "컴팩트", "close": "닫기",
         "rep_none": "반복 없음", "rep_weekly": "매주", "rep_biweekly": "격주", "rep_monthly": "매월",
         "tip_repeat": "반복 (누르면 바뀌어요). 여러 날 일정은 달력에서 마지막 날을 Shift+클릭하세요.",
@@ -605,6 +612,13 @@ TEXT = {
     },
     "en": {
         "lang_name": "English",
+        "week_n": "Week {n}", "week_now": "This week (week of the semester)",
+        "week_unset_hint": "Press + to set which week of the semester this is, so week ranges like 1-8 show correctly.",
+        "weeks_hint": "e.g. 1-8 or 1,3,5 · blank = all semester",
+        "week_bad": "Couldn't read the weeks (e.g. 1-8 or 1,3,5)",
+        "week_need_no": "To use week ranges, set this week's number in settings.",
+        "tt_add_alt": "+ Another class here", "tt_new_chip": "New class",
+        "tt_add_hint": "Add a class that meets in this slot on other weeks (odd / even, weeks 1-8 …). Type a course name to save it.",
         "settings": "Settings", "compact": "Compact", "close": "Close",
         "rep_none": "Once", "rep_weekly": "Weekly", "rep_biweekly": "Biweekly", "rep_monthly": "Monthly",
         "tip_repeat": "Repeat (click to change). For a multi-day event, Shift+click the last day on the calendar.",
@@ -704,6 +718,13 @@ TEXT = {
     },
     "zh": {
         "lang_name": "中文",
+        "week_n": "第{n}周", "week_now": "本周（学期第几周）",
+        "week_unset_hint": "点 + 设置本周是第几周，“1-8周”这类周次范围才能正确显示。",
+        "weeks_hint": "如 1-8 或 1,3,5 · 留空 = 整学期",
+        "week_bad": "周次格式有误（如 1-8 或 1,3,5）",
+        "week_need_no": "要使用周次范围，请先在设置里设定本周是第几周。",
+        "tt_add_alt": "+ 同一时段的另一门课", "tt_new_chip": "新课程",
+        "tt_add_hint": "添加在同一时段、其他周次上的课程（单周／双周、1-8周等）。输入课程名即可保存。",
         "settings": "设置", "compact": "紧凑", "close": "关闭",
         "rep_none": "不重复", "rep_weekly": "每周", "rep_biweekly": "每两周", "rep_monthly": "每月",
         "tip_repeat": "重复（点击切换）。多日日程：在日历上按住 Shift 点击最后一天。",
@@ -1193,6 +1214,21 @@ def isop_unscheduled(resp):
 def isop_slots(resp, n_days=N_DAYS):
     """ISOP '个人课表及教室' 응답 → parse_pku_table 과 같은 ({(요일, 교시): [과목]}, 주말 수)."""
     slots, weekend = {}, 0
+    # 시작 주~끝 주: 가장 흔한 범위(보통 1-16)는 '학기 내내'로 보고 적지 않는다.
+    # 그것과 다른 수업(반 학기 등)만 주차 범위를 붙인다.
+    spans = []
+    for c in resp.get("list") or []:
+        for _, _, _, j in isop_entries(c):
+            a, b = str(j.get("qsz") or ""), str(j.get("jsz") or "")
+            if a.isdigit() and b.isdigit():
+                spans.append((int(a), int(b)))
+    usual = max(set(spans), key=spans.count) if spans else None
+
+    def weeks_of(j):
+        a, b = str(j.get("qsz") or ""), str(j.get("jsz") or "")
+        if not (a.isdigit() and b.isdigit()) or (int(a), int(b)) == usual:
+            return ""
+        return norm_weeks("%s-%s" % (a, b)) or ""
     for c in resp.get("list") or []:
         title = (c.get("kcmc") or "").strip()
         if not title:
@@ -1210,7 +1246,8 @@ def isop_slots(resp, n_days=N_DAYS):
             for p in range(a, b + 1):
                 slots.setdefault((di, p), []).append({
                     "title": title, "room": (j.get("skjs") or "").strip(),
-                    "week": PKU_WEEKS.get((j.get("dsz") or "").strip(), "all"), "exam": exam})
+                    "week": PKU_WEEKS.get((j.get("dsz") or "").strip(), "all"),
+                    "weeks": weeks_of(j), "exam": exam})
     return slots, weekend
 
 
@@ -1363,6 +1400,95 @@ def parse_periods(items):
     return out
 
 
+# ---------- 시간표: 주차 범위 · 한 칸의 여러 수업 ----------
+# 한 칸("요일-교시")의 값은 대표 수업 하나이고, 같은 시간에 다른 주에 듣는 수업은 그 안의
+# "more" 목록에 둔다 (单周·双周가 다른 수업, 반 학기 수업 등). 수업이 하나뿐인 칸은 예전
+# 형식 그대로라서 옛 버전이 읽어도 문제없다. 주차는 "week"(매주/单/双)에 더해
+# "weeks"("1-8", "1,3,5-7"; 비면 학기 내내)로 적는다.
+
+def parse_weeks(text):
+    """'1-8' · '1,3,5-7' · '第1~8周' → {1,…}. 빈 값은 빈 집합(학기 내내), 못 읽으면 None."""
+    s = re.sub(r"[第周週주차\s]|weeks?|wk", "", (text or ""), flags=re.I)
+    if not s:
+        return set()
+    out = set()
+    for part in re.split(r"[,，、;；/]", s):
+        if not part:
+            continue
+        m = re.fullmatch(r"(\d{1,2})(?:[-~–—〜至](\d{1,2}))?", part)
+        if not m:
+            return None
+        a = int(m.group(1))
+        b = int(m.group(2) or a)
+        if not 1 <= a <= b <= 30:
+            return None
+        out.update(range(a, b + 1))
+    return out
+
+
+def format_weeks(ws):
+    """{1,2,3,5} → '1-3,5'."""
+    out, run = [], []
+    for n in sorted(ws) + [None]:
+        if run and n is not None and n == run[-1] + 1:
+            run.append(n)
+            continue
+        if run:
+            out.append(str(run[0]) if len(run) == 1 else "%d-%d" % (run[0], run[-1]))
+        run = [n]
+    return ",".join(out)
+
+
+def norm_weeks(text):
+    ws = parse_weeks(text)
+    return None if ws is None else format_weeks(ws)
+
+
+def item_core(it):
+    """수업 하나를 비교할 때 쓰는 값 (빠진 항목은 기본값으로 채운다)."""
+    return (it.get("title", ""), it.get("room", ""), pc(it.get("color")),
+            it.get("week", "all"), it.get("weeks", ""))
+
+
+def cell_items(tt, key):
+    """그 칸의 수업들 (대표 수업이 맨 앞)."""
+    it = tt.get(key)
+    if not it:
+        return []
+    return ([{k: v for k, v in it.items() if k != "more"}]
+            + [dict(m) for m in (it.get("more") or []) if isinstance(m, dict) and m.get("title")])
+
+
+def set_cell(tt, key, items):
+    items = [{k: v for k, v in it.items() if k != "more"} for it in items if it and it.get("title")]
+    if not items:
+        tt.pop(key, None)
+        return
+    head = items[0]
+    if len(items) > 1:
+        head["more"] = items[1:]
+    tt[key] = head
+
+
+def all_items(tt):
+    """시간표의 모든 수업 (칸, 수업). 한 칸에 여럿이면 모두."""
+    for key in sorted(tt):
+        for it in cell_items(tt, key):
+            yield key, it
+
+
+def item_active(it, odd, week_no):
+    """그 주(홀짝 odd, 주차 week_no)에 이 수업이 있는지. 주차를 모르면 범위는 따지지 않는다."""
+    week = it.get("week", "all")
+    if week != "all" and (week == "odd") != odd:
+        return False
+    if it.get("weeks") and week_no is not None:
+        ws = parse_weeks(it["weeks"])
+        if ws and week_no not in ws:
+            return False
+    return True
+
+
 COMPACT = (320, 520)        # 컴팩트 모드의 창 크기 (100% 배율 기준)
 REPEATS = ["", "weekly", "biweekly", "monthly"]
 RELEASES_API = "https://api.github.com/repos/HANSEIDON/DeskCal/releases/latest"
@@ -1511,7 +1637,7 @@ def _ics_fold(line):
     return out
 
 
-def build_ics(events, series, courses, tt, periods, odd_monday, today, exam_name):
+def build_ics(events, series, courses, tt, periods, odd_monday, today, exam_name, week1=None):
     """일정·반복 일정·시험·수업을 다른 캘린더 앱이 읽는 .ics 글로 만든다.
     시간은 시간대 없이 적는다 (받는 쪽에서 그 컴퓨터의 현지 시간으로 읽는다)."""
     day1 = dt.timedelta(days=1)
@@ -1578,35 +1704,49 @@ def build_ics(events, series, courses, tt, periods, odd_monday, today, exam_name
             name = "%s · %s" % (exam_name(k), title)
             add("x|%s|%s" % (title, k), name if is_time(note) or not note else
                 "%s (%s)" % (name, note), day, note if is_time(note) else "")
-    # 수업: 이번 주부터 기말 시험 날(없으면 18주 뒤)까지 매주
+    # 수업: 이번 주부터 기말 시험 날(없으면 18주 뒤)까지 매주.
+    # 주차 범위가 있고 第1周를 알면 그 주들만 하나씩 적는다.
     last = max([d for d in finals if d >= today] or [today + dt.timedelta(weeks=18)])
     monday = today - dt.timedelta(days=today.weekday())
-    odd_now = ((monday - odd_monday).days // 7) % 2 == 0
+    odd_now = ((monday - (week1 or odd_monday)).days // 7) % 2 == 0
     for di in range(7):
-        p = 1
-        while p <= PERIODS:
-            it = tt.get("%d-%d" % (di, p))
-            if not it or not it.get("title"):
-                p += 1
-                continue
-            span = 1
-            while p + span <= PERIODS:
-                nx = tt.get("%d-%d" % (di, p + span))
-                if not nx or any(nx.get(k) != it.get(k) for k in ("title", "room")) \
-                        or nx.get("week", "all") != it.get("week", "all"):
-                    break
-                span += 1
-            if p + span - 2 < len(periods):
+        found = {}                               # 같은 수업이 있는 교시들
+        for p in range(1, PERIODS + 1):
+            for it in cell_items(tt, "%d-%d" % (di, p)):
+                if it.get("title"):
+                    key = (it["title"], it.get("room", ""), it.get("week", "all"),
+                           it.get("weeks", ""))
+                    found.setdefault(key, (it, []))[1].append(p)
+        for it, ps in found.values():
+            runs, start, prev = [], ps[0], ps[0]
+            for p in ps[1:] + [None]:
+                if p is not None and p == prev + 1:
+                    prev = p
+                    continue
+                runs.append((start, prev))
+                if p is not None:
+                    start = prev = p
+            week = it.get("week", "all")
+            ws = parse_weeks(it.get("weeks", "")) if it.get("weeks") else None
+            for p0, p1 in runs:
+                if p1 - 1 >= len(periods):
+                    continue
+                a_, b_ = periods[p0 - 1][0], periods[p1 - 1][1]
+                tm, end_tm = "%02d:%02d" % divmod(a_, 60), "%02d:%02d" % divmod(b_, 60)
+                if ws and week1:
+                    for n in sorted(ws):
+                        day = week1 + dt.timedelta(weeks=n - 1, days=di)
+                        if day < monday or (week != "all" and (week == "odd") != (n % 2 == 1)):
+                            continue
+                        add("c|%d|%d|%s|%d" % (di, p0, it["title"], n), it["title"], day, tm,
+                            end_tm=end_tm, where=it.get("room", ""))
+                    continue
                 first = monday + dt.timedelta(days=di)
-                week = it.get("week", "all")
                 if week != "all" and (week == "odd") != odd_now:
                     first += dt.timedelta(days=7)
-                a, b = periods[p - 1][0], periods[p + span - 2][1]
-                tm, end_tm = "%02d:%02d" % divmod(a, 60), "%02d:%02d" % divmod(b, 60)
-                add("c|%d|%d|%s" % (di, p, it["title"]), it["title"], first, tm, end_tm=end_tm,
+                add("c|%d|%d|%s" % (di, p0, it["title"]), it["title"], first, tm, end_tm=end_tm,
                     rrule="FREQ=WEEKLY" + (";INTERVAL=2" if week != "all" else "")
                     + until(last, tm), where=it.get("room", ""))
-            p += span
     lines.append("END:VCALENDAR")
     return "\r\n".join(x for line in lines for x in _ics_fold(line)) + "\r\n"
 
@@ -1667,6 +1807,8 @@ class DeskCal(tk.Tk):
         self.view = self.conf.get("view", "cal")
         self.weekend_tt = bool(self.conf.get("weekend_tt", False))
         self.tt_sel = (0, 1)
+        self._tt_adding = False        # 고른 칸에 다른 주의 수업을 새로 적는 중
+        self.tt_weeks = ""
         self.tt_multi = None           # 드래그·Ctrl+클릭으로 고른 여러 칸 {(요일, 교시)}
         self._tt_anchor = None
         self._tt_base = set()
@@ -1872,16 +2014,54 @@ class DeskCal(tk.Tk):
         self.conf["week_anchor"] = m.isoformat()
         return m
 
+    def week1(self):
+        """第1周의 월요일. 정해 두지 않았으면 None."""
+        return iso_date(self.conf.get("week1"))
+
+    def week_no(self, d):
+        """그 날이 학기 몇 번째 주인지. 第1周를 모르면 None."""
+        w1 = self.week1()
+        return None if not w1 else (self.monday_of(d) - w1).days // 7 + 1
+
     def is_odd_week(self, d):
+        n = self.week_no(d)
+        if n is not None:                      # 주차 번호를 알면 홀수 주가 单周
+            return n % 2 == 1
         return ((self.monday_of(d) - self.anchor()).days // 7) % 2 == 0
 
     def week_label(self, d):
-        return self.t("odd") if self.is_odd_week(d) else self.t("even")
+        par = self.t("odd") if self.is_odd_week(d) else self.t("even")
+        n = self.week_no(d)
+        return "%s · %s" % (self.t("week_n", n=n), par) if n is not None and n >= 1 else par
+
+    def item_on(self, it, day):
+        """그 날이 든 주에 이 수업이 있는지 (单/双周 + 주차 범위)."""
+        return item_active(it, self.is_odd_week(day), self.week_no(day))
+
+    def set_week_no(self, n):
+        """이번 주를 第n周로 정한다. 单/双은 주차 번호의 홀짝을 따른다."""
+        n = min(max(int(n), 1), 30)
+        w1 = self.monday_of(self.today) - dt.timedelta(weeks=n - 1)
+        self.conf["week1"] = self.conf["week_anchor"] = w1.isoformat()
+        self.save_conf()
+        self.render()
+
+    def step_week(self, delta):
+        n = self.week_no(self.today)
+        if n is None:                          # 처음: 지금의 单/双에 맞는 번호에서 시작
+            n = 1 if self.is_odd_week(self.today) else 2
+            delta = 0
+        self.set_week_no(n + delta)
 
     def set_week_kind(self, odd):
         """이번 주를 单周(또는 双周)로 다시 지정한다."""
         m = self.monday_of(self.today)
-        self.conf["week_anchor"] = (m if odd else m - dt.timedelta(days=7)).isoformat()
+        if self.week1():
+            if self.is_odd_week(self.today) != odd:
+                w1 = self.week1() - dt.timedelta(days=7)
+                self.conf["week1"] = self.conf["week_anchor"] = w1.isoformat()
+        else:
+            self.conf["week_anchor"] = (m if odd else m - dt.timedelta(days=7)).isoformat()
         self.save_conf()
         self.render()
 
@@ -2682,6 +2862,7 @@ class DeskCal(tk.Tk):
         self.view = key
         self.conf["view"] = key
         self.panel_mode = "day"
+        self._tt_adding = False
         self.range_to = None
         # 탭만 바꾸는 데 창 전체를 다시 만들 필요는 없다 (바탕화면을 다시 받아 오느라
         # 끊기고 깜빡였다). 머리줄 버튼과 내용만 다시 그린다.
@@ -2789,8 +2970,10 @@ class DeskCal(tk.Tk):
         for ri, week in enumerate(self.weeks):
             # 그 주가 单周인지 双周인지 왼쪽에 표시 (주 계산은 월요일 기준)
             odd = self.is_odd_week(week[1])
+            wn = self.week_no(week[1])             # 주차 번호를 알면 번호를 적는다
             c.create_text(self.gut * 0.5, self.hh + ri * self.ch + pad * 0.7 + f_day * 0.7,
-                          text=self.t("odd_s") if odd else self.t("even_s"),
+                          text=str(wn) if wn is not None and 1 <= wn <= 30 else
+                          self.t("odd_s") if odd else self.t("even_s"),
                           fill=MUTED if odd else DIM,
                           font=(FONT, -max(9, int(f_hdr * 0.9))))
             for ci, day in enumerate(week):
@@ -2973,29 +3156,77 @@ class DeskCal(tk.Tk):
         first, rest = text[:cut].rstrip(), text[cut:].lstrip()
         return [first, self.fit(rest, px, max_w, bold)] if rest else [first]
 
-    def tt_blocks(self):
-        """세로로 붙어 있는 같은 수업을 (요일, 시작교시, 칸수, 내용) 으로 묶는다."""
-        def same(a, b):
-            return all(a.get(k) == b.get(k) for k in ("title", "room", "color")) \
-                and a.get("week", "all") == b.get("week", "all")
+    def shown_item(self, key, sel_keys=()):
+        """시간표 칸에 그릴 수업. 고른 칸은 고치는 중인 대표 수업, 나머지 칸은 이번 주에
+        있는 수업 (없으면 대표 수업)."""
+        items = cell_items(self.tt, key)
+        if not items:
+            return None
+        if key not in sel_keys:
+            for it in items:
+                if self.item_on(it, self.today):
+                    return it
+        return items[0]
+
+    def tt_blocks(self, pick=None):
+        """세로로 붙어 있는 같은 수업을 (요일, 시작교시, 칸수, 내용) 으로 묶는다.
+        pick(칸) 이 없으면 칸의 대표 수업으로 묶는다 (고칠 때의 단위)."""
+        def get(di, p):
+            key = self.tt_key(di, p)
+            if pick:
+                return pick(key)
+            items = cell_items(self.tt, key)
+            return items[0] if items else None
 
         out = []
         for di in range(self.n_days):
             p = 1
             while p <= PERIODS:
-                it = self.tt.get(self.tt_key(di, p))
+                it = get(di, p)
                 if not it:
                     p += 1
                     continue
                 span = 1
                 while p + span <= PERIODS:
-                    nxt = self.tt.get(self.tt_key(di, p + span))
-                    if not nxt or not same(nxt, it):
+                    nxt = get(di, p + span)
+                    if not nxt or item_core(nxt) != item_core(it):
                         break
                     span += 1
                 out.append((di, p, span, it))
                 p += span
         return out
+
+    def bring_front(self, key, it, to_back=False):
+        """그 수업을 칸의 대표로 올린다 (세로로 이어진 칸 모두). 고치는 코드는 대표 수업만
+        다루므로, 고르려는 수업을 먼저 대표로 올려 둔다. 내용은 바뀌지 않는다.
+        to_back 이면 반대로 맨 뒤로 보낸다 (바로 뒤에 있던 수업이 대표가 된다)."""
+        core = item_core(it)
+        di, p = (int(v) for v in key.split("-"))
+
+        def has(q):
+            return any(item_core(x) == core for x in cell_items(self.tt, self.tt_key(di, q)))
+        if not has(p):
+            return
+        a = b = p
+        while a > 1 and has(a - 1):
+            a -= 1
+        while b < PERIODS and has(b + 1):
+            b += 1
+        changed = False
+        for q in range(a, b + 1):
+            k = self.tt_key(di, q)
+            items = cell_items(self.tt, k)
+            i = next(i for i, x in enumerate(items) if item_core(x) == core)
+            if to_back and len(items) > 1:
+                items.append(items.pop(i))
+                set_cell(self.tt, k, items)
+                changed = True
+            elif i and not to_back:
+                items.insert(0, items.pop(i))
+                set_cell(self.tt, k, items)
+                changed = True
+        if changed:
+            self.save_tt()
 
     def period_state(self, now=None):
         """('now', 교시, 진행비율) / ('next', 교시, 0) / None. 주말이면 None."""
@@ -3085,14 +3316,39 @@ class DeskCal(tk.Tk):
         f_ttl = max(8, int(min(self.tch * 0.32, self.tcw * 0.15)))
         f_sub = max(8, int(f_ttl * 0.82))
         boxes, now_boxes = {}, {}
-        for di, p, span, it in self.tt_blocks():
+        sel_keys = set(self.block_keys())
+        self._tt_stacks = []                    # 겹친 카드: (요일, 교시, 칸수, 앞 카드, 전체 자리)
+        peek = max(6, int(min(self.tcw * 0.10, self.tch * 0.24)))
+        for di, p, span, it in self.tt_blocks(lambda k: self.shown_item(k, sel_keys)):
             kind = it.get("week", "all")
-            now_on = kind == "all" or (kind == "odd") == odd_now
+            now_on = self.item_on(it, self.today)
             col = pc(it.get("color", PALETTE[4]))
             x0 = self.tgut + di * self.tcw + pad
             y0 = self.thh + (p - 1) * self.tch + pad
             x1 = self.tgut + (di + 1) * self.tcw - pad
             y1 = self.thh + (p - 1 + span) * self.tch - pad
+            # 같은 시간에 다른 주의 수업이 더 있으면 카드를 겹쳐 놓는다. 뒤 카드는 오른쪽
+            # 아래로 조금 삐져나오고, 거기를 누르면 앞으로 나온다. 그 주에 없는 수업은 점선.
+            here = cell_items(self.tt, self.tt_key(di, p))
+            at = next((i for i, x in enumerate(here) if item_core(x) == item_core(it)), 0)
+            backs = (here[at + 1:] + here[:at])[:2]
+            nb = len(backs)
+            if nb:
+                full = (x0, y0, x1, y1)
+                for k in reversed(range(nb)):
+                    b = backs[k]
+                    bcol = pc(b.get("color", PALETTE[4]))
+                    bx0, by0 = x0 + (k + 1) * peek, y0 + (k + 1) * peek
+                    bx1, by1 = x1 - (nb - 1 - k) * peek, y1 - (nb - 1 - k) * peek
+                    if self.item_on(b, self.today):
+                        bfill, bedge = self.block_colors(bcol)[:2]
+                        round_rect(c, bx0, by0, bx1, by1, rad, fill=bfill, outline=bedge,
+                                   width=max(1, self.px(1.5)), tags="back")
+                    else:
+                        round_rect(c, bx0, by0, bx1, by1, rad, fill=mix(bcol, BG, 0.62),
+                                   outline=mix(bcol, BG, 0.1), dash=(3, 3), tags="back")
+                x1, y1 = x1 - nb * peek, y1 - nb * peek
+                self._tt_stacks.append((di, p, span, (x0, y0, x1, y1), full))
             if now_on:
                 fill, edge, ink, sub = self.block_colors(col)
                 round_rect(c, x0, y0, x1, y1, rad, fill=fill, outline=edge,
@@ -3100,8 +3356,9 @@ class DeskCal(tk.Tk):
                 for p2 in range(p, p + span):
                     now_boxes[(di, p2)] = (x0, y0, x1, y1)
             else:
-                round_rect(c, x0, y0, x1, y1, rad, fill="", outline=mix(col, BG, 0.3),
-                           dash=(3, 3))
+                # 뒤에 카드가 있으면 비쳐 보이지 않게 옅게 칠한다
+                round_rect(c, x0, y0, x1, y1, rad, fill=mix(col, BG, 0.9) if nb else "",
+                           outline=mix(col, BG, 0.3), dash=(3, 3))
                 ink, sub = MUTED, DIM
             for p2 in range(p, p + span):
                 boxes[(di, p2)] = (x0, y0, x1, y1)
@@ -3116,6 +3373,8 @@ class DeskCal(tk.Tk):
             extra = it.get("room", "")
             if kind != "all":
                 extra = (extra + " · " if extra else "") + self.t("chip_" + kind)
+            if it.get("weeks"):
+                extra = (extra + " · " if extra else "") + it["weeks"]
             if extra and (y1 - y0) > lh * (len(lines) + 0.9) + self.px(6):
                 lines.append((self.fit(extra, f_sub, inner, False), f_sub, sub, False))
             top = (y0 + y1) / 2 - (len(lines) - 1) * lh / 2
@@ -3202,6 +3461,17 @@ class DeskCal(tk.Tk):
             return
         self.tt_commit()                       # 다른 칸으로 옮기기 전에 적던 걸 저장
         self.panel_mode = "day"
+        self._tt_adding = False
+        key = self.tt_key(*cell)
+        seen = self.shown_item(key, set(self.block_keys()))
+        if seen:                               # 눈에 보이던 수업을 고치게 한다
+            self.bring_front(key, seen)
+            # 삐져나온 뒤 카드를 눌렀으면 앞 카드를 맨 뒤로 보내 뒤 카드가 앞으로 나오게 한다
+            for sdi, sp, sspan, fr, full in getattr(self, "_tt_stacks", []):
+                if (sdi == cell[0] and sp <= cell[1] < sp + sspan
+                        and (e.x > fr[2] or e.y > fr[3]) and e.x <= full[2] and e.y <= full[3]):
+                    self.bring_front(key, seen, to_back=True)
+                    break
         self.tt_sel, self.tt_multi = cell, None
         self._tt_anchor, self._tt_base = cell, set()
         self.draw_tt()
@@ -3216,6 +3486,7 @@ class DeskCal(tk.Tk):
             return "break"
         self.tt_commit()
         self.panel_mode = "day"
+        self._tt_adding = False
         sel = self.tt_selection()
         sel ^= {cell}
         if not sel:
@@ -3239,6 +3510,7 @@ class DeskCal(tk.Tk):
         new = sel if len(sel) > 1 else None
         if new != self.tt_multi:
             self.panel_mode = "day"
+            self._tt_adding = False
             self.tt_multi = new
             self.draw_tt()                     # 패널은 손을 뗄 때 한 번만 다시 그린다
             self._tt_dragged = True
@@ -3450,7 +3722,10 @@ class DeskCal(tk.Tk):
 
     def panel_tt(self):
         di, p = self.tt_sel
-        it = self.tt.get(self.tt_key(di, p), {})
+        here = cell_items(self.tt, self.tt_key(di, p))     # 이 칸의 수업들 (대표가 맨 앞)
+        if not here or self.tt_multi:
+            self._tt_adding = False
+        it = {} if self._tt_adding else (here[0] if here else {})
         draft = self._draft if (self._draft and self._draft.get("cell") == self.tt_sel) else None
         self._draft = None
         pw = self.panel_w
@@ -3470,10 +3745,36 @@ class DeskCal(tk.Tk):
                      font=self.f(16, True)).pack(side="left")
             tk.Label(top, text=self.period_text(p), bg=CARD,
                      fg=MUTED, font=self.f(10)).pack(side="right")
-            hint, others = self.t("tt_existing" if it else "tt_new"), 0
+            hint, others = self.t("tt_add_hint" if self._tt_adding else
+                                  "tt_existing" if it else "tt_new"), 0
         tk.Label(self.panel, text=hint, bg=CARD,
                  fg=MUTED, font=self.f(11), anchor="w", justify="left",
                  wraplength=pw - self.px(4)).pack(fill="x", pady=(self.px(4), self.px(4)))
+        self._new_chip = None
+        if not multi and (len(here) > 1 or self._tt_adding):
+            # 이 시간의 수업들. 눌러서 고칠 수업을 바꾼다.
+            chips = tk.Frame(self.panel, bg=CARD)
+            chips.pack(fill="x", pady=(self.px(2), self.px(2)))
+            n = len(here) + (1 if self._tt_adding else 0)
+            room_w = max(self.px(30), (pw - n * self.px(27)) // n)
+            off_bg = mix(CARD, FG, 0.13)
+            for i, x in enumerate(here):
+                on = i == 0 and not self._tt_adding
+                text = x.get("title", "")
+                tag = (self.t("chip_" + x["week"]) if x.get("week", "all") != "all" else "")
+                tag = " · ".join(v for v in (tag, x.get("weeks", "")) if v)
+                text = self.fit(text + (" · " + tag if tag else ""), self.fpx(11), room_w, on)
+                b = tk.Label(chips, text=text, bg=ACCENT if on else off_bg,
+                             fg=ACCENT_INK if on else FG, font=self.f(11, on),
+                             padx=self.px(10), pady=self.px(5), cursor="hand2")
+                b.pack(side="left", padx=(0, self.px(5)))
+                if not on:
+                    b.bind("<Button-1>", lambda e, k=i: self.tt_pick_alt(k))
+            if self._tt_adding:
+                self._new_chip = tk.Label(chips, text=self.t("tt_new_chip"), bg=ACCENT,
+                                          fg=ACCENT_INK, font=self.f(11, True),
+                                          padx=self.px(10), pady=self.px(5))
+                self._new_chip.pack(side="left")
         if others:
             tk.Label(self.panel, text=self.t("tt_overwrite", n=others), bg=CARD, fg=SUN,
                      font=self.f(11), anchor="w").pack(fill="x")
@@ -3518,10 +3819,21 @@ class DeskCal(tk.Tk):
                          padx=self.px(12), pady=self.px(4), cursor="hand2")
             b.pack(side="left", padx=(0, self.px(4)))
             b.bind("<Button-1>", lambda e, kk=k: self.tt_set_week(kk))
-        self.field_label(form, self.t("color"), 3)
+        # 주차 범위: 1-8 (반 학기), 1,3,5 (띄엄띄엄). 비우면 학기 내내.
+        self.tt_weeks = it.get("weeks", "") if it else ""
+        self.tt_weeks_e = self.hint_entry(form, 11, self.t("weeks_hint"))
+        self.tt_weeks_e.insert(0, draft.get("weeks", self.tt_weeks) if draft else self.tt_weeks)
+        self.tt_weeks_e.grid(row=3, column=1, sticky="ew", ipady=self.px(4), pady=self.px(3))
+        self.tt_weeks_e.bind("<Return>", lambda _: self.tt_commit())
+        self.tt_weeks_e.bind("<FocusOut>", lambda _: self.tt_commit(), add="+")
+        self.field_label(form, self.t("color"), 4)
         self.tt_color = pc(it.get("color", getattr(self, "tt_color", PALETTE[4])))
-        self.swatches(form, self.tt_color, self.tt_set_color).grid(row=3, column=1,
+        self.swatches(form, self.tt_color, self.tt_set_color).grid(row=4, column=1,
                                                                     sticky="w")
+        if self.tt_weeks and self.week1() is None:
+            tk.Label(self.panel, text=self.t("week_need_no"), bg=CARD, fg=SUN, font=self.f(10),
+                     anchor="w", justify="left", wraplength=pw - self.px(8)
+                     ).pack(fill="x", pady=(self.px(4), 0))
 
         # 저장 상태 + 지우기
         act = tk.Frame(self.panel, bg=CARD)
@@ -3531,6 +3843,9 @@ class DeskCal(tk.Tk):
         self.del_btn = self.button(act, self.t("del_class"), self.tt_delete, "danger", 10)
         if it:
             self.del_btn.pack(side="right")
+            if not multi:                      # 같은 시간에 다른 주의 수업 추가
+                self.button(act, self.t("tt_add_alt"), self.tt_add_alt, "plain", 10
+                            ).pack(side="right", padx=(0, self.px(6)))
 
         # ----- 시험 · 과제 (과목 단위로 저장되어 같은 과목 칸끼리 공유된다) -----
         tk.Frame(self.panel, bg=LINE, height=1).pack(fill="x", pady=(self.px(14),
@@ -3554,8 +3869,6 @@ class DeskCal(tk.Tk):
         self.exam_box = tk.Frame(self.panel, bg=CARD)
         self.exam_box.pack(fill="x")
         self.build_exams()
-        self.button(self.panel, self.t("pku_import"), self.import_pku, "plain", 10
-                    ).pack(side="bottom", anchor="w", pady=(self.px(10), 0))
 
     def build_exams(self):
         for w in self.exam_box.winfo_children():
@@ -3655,7 +3968,8 @@ class DeskCal(tk.Tk):
                 changed = new_vals != self.exam_values()
                 self.exam_vals = {k: list(v) for k, v in new_vals.items()}
                 self._exam_loaded = (title, new_vals)
-            elif not loaded_title or any(it.get("title") == loaded_title for it in self.tt.values()):
+            elif not loaded_title or any(it.get("title") == loaded_title
+                                         for _, it in all_items(self.tt)):
                 new_vals = {k: ("", "") for k in EXAM_KEYS}
                 changed = new_vals != self.exam_values()
                 self.exam_vals = {k: list(v) for k, v in new_vals.items()}
@@ -3671,7 +3985,7 @@ class DeskCal(tk.Tk):
         """패널을 다시 그려도 적던 내용이 살아남도록 지금 값을 담아 둔다."""
         try:
             d = {"cell": self.tt_sel, "title": self.tt_title.get(),
-                 "room": self.tt_room.get()}
+                 "room": self.tt_room.get(), "weeks": self.tt_weeks_e.get()}
         except (tk.TclError, AttributeError):
             return None
         for k in EXAM_KEYS:
@@ -3696,6 +4010,19 @@ class DeskCal(tk.Tk):
                 te.delete(0, "end")
                 te.insert(0, tm)                # 14시 → 14:00
             self.exam_vals[k][1] = tm if tm is not None else raw
+        bad_weeks = False
+        try:                                    # 주차 범위: 읽을 수 있으면 '1-8' 꼴로 정리한다
+            raw = self.tt_weeks_e.get().strip()
+            nw = norm_weeks(raw)
+            if nw is None:
+                bad_weeks = True
+            else:
+                self.tt_weeks = nw
+                if raw != nw:
+                    self.tt_weeks_e.delete(0, "end")
+                    self.tt_weeks_e.insert(0, nw)
+        except (tk.TclError, AttributeError):
+            pass
         key = self.tt_key(*self.tt_sel)
         old = self.tt.get(key)
         keys = self.block_keys()
@@ -3705,6 +4032,25 @@ class DeskCal(tk.Tk):
             old_titles.add(loaded_t)
         new = ({"title": title, "room": room, "color": self.tt_color, "week": self.tt_week}
                if title else None)
+        if new and self.tt_weeks:
+            new["weeks"] = self.tt_weeks
+        if self._tt_adding:
+            # 이 시간에 다른 주의 수업을 새로 넣는다. 있던 수업은 그대로 두고 그 앞에 둔다.
+            if not new:
+                return False
+            self.push_undo()
+            for k in keys:
+                set_cell(self.tt, k, [dict(new)] + cell_items(self.tt, k))
+            self._tt_adding = False
+            self._tt_loaded = (title, room)
+            self.save_tt()
+            if self._new_chip is not None and self._new_chip.winfo_exists():
+                self._new_chip.config(text=self.fit(title, self.fpx(11), self.px(120), True))
+            if not self.tt_commit():            # 시험 정보까지 저장 (없으면 여기서 마무리)
+                self.draw_tt()
+                self.del_btn.pack(side="right")
+                self.set_status("saved")
+            return True
         # 빠진 항목은 기본값으로 채워 비교한다. 안 그러면 아무것도 안 고쳐도
         # 저장할 때마다 '바뀜'이 돼 되돌리기 기록이 쌓인다.
         updates = {}
@@ -3718,6 +4064,10 @@ class DeskCal(tk.Tk):
                 if t_ch:
                     nv = {"title": title, "room": room if (r_ch or not cur) else cur.get("room", ""),
                           "color": self.tt_color, "week": self.tt_week}
+                    if self.tt_weeks:
+                        nv["weeks"] = self.tt_weeks
+                    if cur and cur.get("more"):
+                        nv["more"] = cur["more"]
                 elif r_ch and cur:
                     nv = dict(cur, room=room)
                 else:
@@ -3726,11 +4076,17 @@ class DeskCal(tk.Tk):
                     updates[k] = nv
             cell_changed = bool(updates)
         else:
-            cell_changed = any(new != (dict({"room": "", "week": "all"}, **self.tt[k])
-                                       if self.tt.get(k) else None) for k in keys)
+            cell_changed = any((item_core(new) if new else None)
+                               != (item_core(self.tt[k]) if self.tt.get(k) else None)
+                               for k in keys)
         vals = self.exam_values()
         exam_changed = bool(title) and vals != self._exam_loaded[1]
         if not cell_changed and not exam_changed:
+            if bad_weeks:
+                try:
+                    self.status_lbl.config(text=self.t("week_bad"), fg=SUN)
+                except tk.TclError:
+                    pass
             return False
         self.push_undo()
         if cell_changed:
@@ -3738,11 +4094,9 @@ class DeskCal(tk.Tk):
                 self.tt.update(updates)
                 self._tt_loaded = (title or self._tt_loaded[0], room)
             else:
-                for k in keys:
-                    if new:
-                        self.tt[k] = dict(new)
-                    else:
-                        self.tt.pop(k, None)
+                for k in keys:                  # 같은 칸의 다른 수업('more')은 그대로 둔다
+                    set_cell(self.tt, k, ([dict(new)] if new else [])
+                             + cell_items(self.tt, k)[1:])
             self.save_tt()
 
         active = self.active_courses()
@@ -3781,6 +4135,8 @@ class DeskCal(tk.Tk):
         else:
             self.del_btn.pack_forget()
         self.set_status("saved")
+        if bad_weeks:
+            self.status_lbl.config(text=self.t("week_bad"), fg=SUN)
         return True
 
     def block_keys(self):
@@ -3798,6 +4154,9 @@ class DeskCal(tk.Tk):
         self.tt_commit()
         self._draft = self.tt_draft()
         self.tt_week = kind
+        if self._tt_adding:
+            self.render_panel()
+            return
         it = self.tt.get(self.tt_key(*self.tt_sel))
         keys = [k for k in self.block_keys() if self.tt.get(k)]
         if any(self.tt[k].get("week", "all") != kind for k in keys):
@@ -3815,6 +4174,9 @@ class DeskCal(tk.Tk):
         self.tt_commit()
         self._draft = self.tt_draft()
         self.tt_color = col
+        if self._tt_adding:
+            self.render_panel()
+            return
         it = self.tt.get(self.tt_key(*self.tt_sel))
         keys = [k for k in self.block_keys() if self.tt.get(k)]
         if any(pc(self.tt[k].get("color")) != col for k in keys):
@@ -3826,6 +4188,32 @@ class DeskCal(tk.Tk):
         self.render_panel()
         if it:
             self.set_status("saved")
+
+    def tt_pick_alt(self, i):
+        """이 칸의 i 번째 수업을 고칠 대상으로 바꾼다."""
+        key = self.tt_key(*self.tt_sel)
+        items = cell_items(self.tt, key)
+        target = items[i] if i < len(items) else None
+        self.tt_commit()
+        self._tt_adding = False
+        if target:
+            self.bring_front(key, target)
+        self.draw_tt()
+        self.render_panel()
+
+    def tt_add_alt(self):
+        """이 시간에 다른 주에 듣는 수업을 새로 적기 시작한다 (单周 수업 옆에 双周 수업 등)."""
+        self.tt_commit()
+        items = cell_items(self.tt, self.tt_key(*self.tt_sel))
+        if not items or self.tt_multi:
+            return
+        self._tt_adding = True
+        self.tt_week = {"odd": "even", "even": "odd"}.get(items[0].get("week", "all"), "all")
+        used = {pc(x.get("color")) for _, x in all_items(self.tt)}
+        self.tt_color = next((c for c in PALETTE if c not in used), PALETTE[0])
+        self._draft = None
+        self.render_panel()
+        self.tt_title.focus_set()
 
     def dday_text(self, s):
         d = parse_date(s) if isinstance(s, str) else s
@@ -3840,8 +4228,8 @@ class DeskCal(tk.Tk):
             return
         del_titles = {self.tt[k].get("title", "").strip() for k in keys if self.tt.get(k)}
         self.push_undo()
-        for k in keys:
-            self.tt.pop(k, None)
+        for k in keys:                          # 같은 칸의 다른 수업이 있으면 그게 대표가 된다
+            set_cell(self.tt, k, cell_items(self.tt, k)[1:])
         self.save_tt()
         active = self.active_courses()
         cs_changed = False
@@ -3868,7 +4256,7 @@ class DeskCal(tk.Tk):
         except (AttributeError, tk.TclError):
             pass
         keep, sc, cv = None, self._scroll, None   # 목록을 다시 그려도 보던 자리를 지킨다
-        if sc is not None and self._scroll_mode == self.panel_mode:
+        if sc is not None and self._scroll_mode == self.scroll_key():
             try:
                 keep = sc.yview()[0]
             except tk.TclError:
@@ -3889,24 +4277,41 @@ class DeskCal(tk.Tk):
             px0, py0, px1, py1 = self.panel_box
             new.place(x=(px1 - px0) + 40, y=0, width=px1 - px0, height=py1 - py0)
             new.update_idletasks()
+            cv = self._scroll
+            if keep and cv is not None:            # 보던 자리로 돌려놓은 다음에 보여준다
+                box = cv.bbox("all")
+                if box:
+                    cv.config(scrollregion=(0, 0, box[2], box[3]))
+                    cv.yview_moveto(keep)
             new.place(x=0, y=0, width=px1 - px0, height=py1 - py0)
             old.destroy()
+
+    def scroll_key(self):
+        """지금 패널이 어떤 목록인지. 같은 목록을 다시 그릴 때만 보던 자리를 지킨다."""
+        if self.panel_mode == "settings":
+            return "settings"
+        return ("tt", self.tt_sel) if self.view == "tt" else self.panel_mode
 
     def fill_panel(self, draft, keep=None):
         if self.panel_mode == "settings":
             self.panel_settings()
         elif self.view == "tt":
-            self.panel_tt()
-            return
+            # 수업이 겹치거나 창이 작으면 내용이 카드보다 길어진다. 가져오기 버튼은 맨 아래에
+            # 붙여 두고, 나머지는 휠로 넘길 수 있게 한다 (전에는 아래가 잘려 보이지 않았다).
+            outer = self.panel
+            self.button(outer, self.t("pku_import"), self.import_pku, "plain", 10
+                        ).pack(side="bottom", anchor="w", pady=(self.px(10), 0))
+            self.panel = self.scroll_area(outer)
+            try:
+                self.panel_tt()
+            finally:
+                self.panel = outer
         elif self.panel_mode == "upcoming":
             self.panel_upcoming()
         else:
             self.panel_day(draft)
             return
-        self._scroll_mode = self.panel_mode
-        cv = self._scroll
-        if keep and cv is not None:
-            cv.after(15, lambda: cv.winfo_exists() and (cv.yview_moveto(keep), cv._sync()))
+        self._scroll_mode = self.scroll_key()
 
     def panel_day(self, draft=""):
         d = self.selected
@@ -3957,23 +4362,28 @@ class DeskCal(tk.Tk):
         self.make_upcoming()
 
     def classes_on(self, day):
-        """그 날의 수업 [(시작 교시, 칸수, 내용)]. 그 주에 없는 单/双周 수업은 뺀다."""
-        di, odd, out, p = day.weekday(), self.is_odd_week(day), [], 1
+        """그 날의 수업 [(시작 교시, 칸수, 내용)]. 그 주에 없는 수업(单/双周, 주차 범위)은 뺀다."""
+        di = day.weekday()
+
+        def at(p):
+            for it in cell_items(self.tt, self.tt_key(di, p)):
+                if it.get("title") and self.item_on(it, day):
+                    return it
+            return None
+        out, p = [], 1
         while p <= PERIODS:
-            it = self.tt.get(self.tt_key(di, p))
-            if not it or not it.get("title"):
+            it = at(p)
+            if not it:
                 p += 1
                 continue
             span = 1
             while p + span <= PERIODS:
-                nx = self.tt.get(self.tt_key(di, p + span))
-                if not nx or nx.get("title") != it.get("title") \
-                        or nx.get("week", "all") != it.get("week", "all"):
+                nx = at(p + span)
+                if not nx or (nx.get("title"), nx.get("room", "")) != (it.get("title"),
+                                                                      it.get("room", "")):
                     break
                 span += 1
-            week = it.get("week", "all")
-            if week == "all" or (week == "odd") == odd:
-                out.append((p, span, it))
+            out.append((p, span, it))
             p += span
         return out
 
@@ -4030,7 +4440,8 @@ class DeskCal(tk.Tk):
 
     def active_courses(self):
         """현재 시간표에 실제로 등록된 과목명 집합 (공백 제외)."""
-        return {it.get("title", "").strip() for it in self.tt.values() if it.get("title", "").strip()}
+        return {it.get("title", "").strip() for _, it in all_items(self.tt)
+                if it.get("title", "").strip()}
 
     def cleanup_orphan_courses(self):
         """시간표에서 삭제되거나 변경되어 더 이상 시간표에 존재하지 않는 과목의
@@ -4070,18 +4481,18 @@ class DeskCal(tk.Tk):
                 if parse_date(info.get(k + "_date", "")) == day]
 
     def course_color(self, title):
-        for key in sorted(self.tt):
-            if self.tt[key].get("title") == title:
-                return pc(self.tt[key].get("color"))
+        for _, it in all_items(self.tt):
+            if it.get("title") == title:
+                return pc(it.get("color"))
         return URGENT
 
     def goto_course(self, title):
         """시간표로 넘어가 그 과목의 첫 칸을 고른다 (시험 날짜는 거기서 고친다)."""
-        cells = sorted((int(a), int(b)) for a, b in
-                       (key.split("-") for key, it in self.tt.items()
-                        if it.get("title") == title))
-        if cells:
-            self.tt_sel = cells[0]
+        found = sorted(((int(key.split("-")[0]), int(key.split("-")[1])), key, it)
+                       for key, it in all_items(self.tt) if it.get("title") == title)
+        if found:
+            self.tt_sel = found[0][0]
+            self.bring_front(found[0][1], found[0][2])
         self.set_view("tt")
 
     def check_box(self, parent, col, done, square, on_click):
@@ -4598,10 +5009,28 @@ class DeskCal(tk.Tk):
             for i in range(len(SIZES))]
         self.seg(box, self.t("size"), sizes,
                  lambda i: self.set_compact() if i < 0 else self.set_size(i))
-        odd = self.is_odd_week(self.today)
-        self.seg(box, self.t("parity"),
-                 [(True, self.t("set_odd"), odd), (False, self.t("set_even"), not odd)],
-                 self.set_week_kind)
+        # 이번 주가 몇 주차인지: − / + 로 맞춘다. 单/双은 번호의 홀짝을 따른다.
+        tk.Label(box, text=self.t("week_now"), bg=CARD, fg=MUTED, font=self.f(11), anchor="w"
+                 ).pack(fill="x", pady=(self.px(12), self.px(5)))
+        wrow = tk.Frame(box, bg=CARD)
+        wrow.pack(fill="x")
+        off_bg = mix(CARD, FG, 0.13)
+        for text, delta in (("−", -1), (None, 0), ("+", 1)):
+            if text is None:
+                tk.Label(wrow, text=self.week_label(self.today), bg=ACCENT, fg=ACCENT_INK,
+                         font=self.f(12, True), padx=self.px(12), pady=self.px(6)
+                         ).pack(side="left", padx=(0, self.px(5)))
+                continue
+            b = tk.Label(wrow, text=text, bg=off_bg, fg=FG, font=self.f(12, True),
+                         padx=self.px(13), pady=self.px(6), cursor="hand2")
+            b.pack(side="left", padx=(0, self.px(5)))
+            b.bind("<Button-1>", lambda e, dd=delta: self.step_week(dd))
+            b.bind("<Enter>", lambda e: e.widget.config(bg=mix(CARD, FG, 0.24)), add="+")
+            b.bind("<Leave>", lambda e: e.widget.config(bg=off_bg), add="+")
+        if self.week_no(self.today) is None:
+            tk.Label(box, text=self.t("week_unset_hint"), bg=CARD, fg=DIM, font=self.f(10),
+                     anchor="w", justify="left", wraplength=self.panel_w - self.px(16)
+                     ).pack(fill="x", pady=(self.px(5), 0))
         tk.Frame(box, bg=LINE, height=1).pack(fill="x", pady=(self.px(14), self.px(8)))
         self.toggle_row(box, self.t("weekend_tt"), self.weekend_tt, self.toggle_weekend_tt)
         auto = autostart_enabled()
@@ -4636,7 +5065,8 @@ class DeskCal(tk.Tk):
         """다른 캘린더 앱(Google · Outlook · Apple)에 넣을 수 있는 .ics 파일을 만든다."""
         self.tt_commit()
         text = build_ics(self.events, self.series, self.courses, self.tt, self.periods,
-                         self.anchor(), self.today, lambda k: self.t("exam_" + k))
+                         self.anchor(), self.today, lambda k: self.t("exam_" + k),
+                         week1=self.week1())
         show = path is None
         path = path or os.path.join(documents_dir(), "DeskCal.ics")
         try:
@@ -4703,7 +5133,7 @@ class DeskCal(tk.Tk):
             self.courses = data["courses.json"]
             self.save_courses()
         conf = data.get("config.json") or {}
-        for k in ("lang", "theme", "glass", "size", "compact", "color", "week_anchor",
+        for k in ("lang", "theme", "glass", "size", "compact", "color", "week_anchor", "week1",
                   "periods", "weekend_tt"):
             if k in conf:
                 self.conf[k] = conf[k]
@@ -5026,6 +5456,17 @@ class DeskCal(tk.Tk):
         """처음 켤 때는 '윈도우 시작 시 실행'을 켜 둔다. 메뉴에서 끈 뒤에는 다시 켜지 않는다."""
         if "autostart" not in self.conf:
             self.set_autostart_pref(True)
+        elif self.conf.get("autostart") is True:
+            # 켜 둔 설정인데 등록이 사라졌거나(다른 설치본을 제거하면 같이 지워진다)
+            # 폴더를 옮겨 경로가 달라졌으면 다시 등록한다.
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+                    cur = winreg.QueryValueEx(k, RUN_NAME)[0]
+            except OSError:
+                cur = None
+            if cur != launch_command():
+                log("윈도우 시작 시 실행 등록이 %s - 다시 등록" % ("없음" if cur is None else "다른 경로"))
+                set_autostart(True)
 
 
     @property
@@ -5256,24 +5697,32 @@ class DeskCal(tk.Tk):
             self.save_conf()
         portal = {}
         for (di, p), cs in sorted(slots.items()):
-            skipped += len(cs) - 1                   # 한 칸에는 한 과목만 넣을 수 있다
-            c = cs[0]
-            portal.setdefault(c["title"], {"cells": {}, "exam": None})
-            portal[c["title"]]["cells"][(di, p)] = (c["room"], c["week"])
-            portal[c["title"]]["exam"] = portal[c["title"]]["exam"] or c["exam"]
+            seen = set()
+            for c in cs:                             # 같은 시간에 单周·双周 수업이 따로 있을 수 있다
+                if c["title"] in seen:               # 같은 과목이 한 칸에 두 번이면 첫 것만
+                    skipped += 1
+                    continue
+                seen.add(c["title"])
+                portal.setdefault(c["title"], {"cells": {}, "exam": None})
+                portal[c["title"]]["cells"][(di, p)] = (c["room"], c["week"], c.get("weeks", ""))
+                portal[c["title"]]["exam"] = portal[c["title"]]["exam"] or c["exam"]
         mine = {}
-        for key, it in self.tt.items():
+        for key, it in all_items(self.tt):
             di, p = (int(v) for v in key.split("-"))
             mine.setdefault(it.get("title"), {})[(di, p)] = (it.get("room", ""),
-                                                             it.get("week", "all"))
+                                                             it.get("week", "all"),
+                                                             it.get("weeks", ""))
         wk = {"all": self.t("chip_all"), "odd": self.t("chip_odd"), "even": self.t("chip_even")}
+
+        def wname(v):                                # '单周 1-8'
+            return (wk[v[1]] + " " + v[2]).strip()
         out = []
         for title, info in portal.items():
             new, old = info["cells"], mine.get(title)
             if old:                                  # 학교 자료에 교실이 비면 (체육 등) 직접 적은 교실 유지
-                mine_room = next((r for r, _ in old.values() if r), "")
-                new = info["cells"] = {k: (r or old.get(k, (mine_room,))[0] or mine_room, w)
-                                       for k, (r, w) in new.items()}
+                mine_room = next((v[0] for v in old.values() if v[0]), "")
+                new = info["cells"] = {k: (v[0] or old.get(k, (mine_room,))[0] or mine_room,
+                                           v[1], v[2]) for k, v in new.items()}
             if old is None:
                 out.append({"kind": "set", "title": title, "cells": new, "on": True,
                             "text": self.t("chg_new", t=title, cells=self.fmt_cells(new))})
@@ -5281,16 +5730,16 @@ class DeskCal(tk.Tk):
                 parts = []
                 if set(new) != set(old):
                     parts.append(self.t("chg_time", a=self.fmt_cells(old), b=self.fmt_cells(new)))
-                rooms_o = sorted({r for r, _ in old.values()})
-                rooms_n = sorted({r for r, _ in new.values()})
+                rooms_o = sorted({v[0] for v in old.values()})
+                rooms_n = sorted({v[0] for v in new.values()})
                 if rooms_o != rooms_n:
                     parts.append(self.t("chg_room", a=" / ".join(rooms_o) or "—",
                                         b=" / ".join(rooms_n) or "—"))
-                weeks_o = sorted({w for _, w in old.values()})
-                weeks_n = sorted({w for _, w in new.values()})
+                weeks_o = sorted({wname(v) for v in old.values()})
+                weeks_n = sorted({wname(v) for v in new.values()})
                 if weeks_o != weeks_n:
-                    parts.append(self.t("chg_week", a=" / ".join(wk[w] for w in weeks_o),
-                                        b=" / ".join(wk[w] for w in weeks_n)))
+                    parts.append(self.t("chg_week", a=" / ".join(weeks_o),
+                                        b=" / ".join(weeks_n)))
                 if not parts:                        # 칸마다 강의실·주차가 엇갈리게 바뀐 경우
                     parts.append(self.t("chg_detail"))
                 out.append({"kind": "set", "title": title, "cells": new, "on": True,
@@ -5321,24 +5770,34 @@ class DeskCal(tk.Tk):
         self.tt_commit()
         self.push_undo()
         colors = {}
-        for it in self.tt.values():
+        for _, it in all_items(self.tt):
             colors.setdefault(it.get("title"), it.get("color"))
         free = [c for c in PALETTE if c not in colors.values()] or PALETTE
         n_new = 0
+        placed = {}                                  # 칸마다 이번에 넣은 수업 수 (받은 순서를 지킨다)
         for ch in changes:
             title = ch["title"]
             if ch["kind"] in ("set", "gone"):
-                for k in [k for k, it in self.tt.items() if it.get("title") == title]:
-                    del self.tt[k]
+                for k in list(self.tt):              # 그 과목만 뺀다 (같은 칸의 다른 수업은 둔다)
+                    items = cell_items(self.tt, k)
+                    kept = [x for x in items if x.get("title") != title]
+                    if len(kept) != len(items):
+                        set_cell(self.tt, k, kept)
                 if ch["kind"] == "gone":
                     self.courses.pop(title, None)
             if ch["kind"] == "set":
                 if not colors.get(title):
                     colors[title] = free[n_new % len(free)]
                     n_new += 1
-                for (di, p), (room, week) in ch["cells"].items():
-                    self.tt[self.tt_key(di, p)] = {"title": title, "room": room,
-                                                   "color": colors[title], "week": week}
+                for (di, p), v in ch["cells"].items():
+                    new = {"title": title, "room": v[0], "color": colors[title], "week": v[1]}
+                    if len(v) > 2 and v[2]:
+                        new["weeks"] = v[2]
+                    k = self.tt_key(di, p)           # 같은 시간의 다른 수업은 지우지 않고 뒤에 둔다
+                    items = cell_items(self.tt, k)
+                    items.insert(placed.get(k, 0), new)
+                    placed[k] = placed.get(k, 0) + 1
+                    set_cell(self.tt, k, items)
             elif ch["kind"] == "exam":
                 info = self.courses.setdefault(title, {})
                 info["fin_date"], info["fin_time"] = ch["exam"]
