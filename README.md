@@ -15,7 +15,7 @@
 
 ---
 
-### [⬇️ **Download DeskCal 1.3.0 (Setup.exe)**](https://github.com/HANSEIDON/DeskCal/releases/latest)
+### [⬇️ **Download DeskCal 1.3.1 (Setup.exe)**](https://github.com/HANSEIDON/DeskCal/releases/latest)
 **Windows 10 / 11** · 1-Click Installer (~32 MB) · No Administrator Rights Required
 
 ---
@@ -26,7 +26,7 @@ DeskCal sits on your Windows desktop, just above the wallpaper. Deadlines, exams
 选课 dates and your weekly timetable are always one glance away. Your data stays on
 your computer, and it needs no account.
 
-> **New in 1.3.0 — Repeating & multi-day events, natural event times, .ics calendar export, compact mode, and zero-flicker UI.** DeskCal is powered by Peking University's official data platform (ISOP), so it can load your real timetable and exam dates straight from the university instead of you typing them in.
+> **New in 1.3.1 — Several classes in one slot, week ranges & numbers, and in-place auto updates.** DeskCal is powered by Peking University's official data platform (ISOP), so it can load your real timetable and exam dates straight from the university instead of you typing them in.
 
 ![Calendar view, dark theme](docs/calendar-dark.png)
 
