@@ -1364,6 +1364,74 @@ app.tt_add_alt()
 check(app.t("add") in LB(), "같은 시간에 수업을 더 넣을 때도 '추가' 버튼이 보임")
 app.destroy()
 
+
+print("\n== 앱 안에서 업데이트 ==")
+import hashlib  # noqa: E402
+import pathlib  # noqa: E402
+upd = tempfile.mkdtemp(prefix="deskcal_upd_")
+src = os.path.join(upd, "src.bin")
+blob = os.urandom(700000)
+open(src, "wb").write(blob)
+good = hashlib.sha256(blob).hexdigest()
+seen = []
+out = deskcal.download_verified(pathlib.Path(src).as_uri(), os.path.join(upd, "a.exe"), good,
+                                lambda g, t: seen.append((g, t)))
+check(open(out, "rb").read() == blob and seen and seen[-1] == (len(blob), len(blob)),
+      "설치 파일을 받고 SHA-256 이 맞으면 저장 (진행률 %d번)" % len(seen))
+try:
+    deskcal.download_verified(pathlib.Path(src).as_uri(), os.path.join(upd, "b.exe"), "0" * 64)
+    bad = False
+except ValueError:
+    bad = True
+check(bad and not os.path.exists(os.path.join(upd, "b.exe"))
+      and not os.path.exists(os.path.join(upd, "b.exe.part")),
+      "SHA-256 이 다르면 거절하고 받은 파일을 남기지 않음")
+sc = deskcal.update_script(r"C:\x\DeskCal-9.9.9-Setup.exe", r"C:\app\DeskCal.exe")
+check('/wait "C:\\x\\DeskCal-9.9.9-Setup.exe" /VERYSILENT' in sc
+      and sc.index("Setup.exe") < sc.index('start "" "C:\\app\\DeskCal.exe"'),
+      "설치가 끝난 뒤에 앱을 다시 켜는 순서")
+check(not deskcal.is_installed(), "소스로 실행 중이면 '설치본'이 아님")
+app, d = fresh(conf={"lang": "en"})
+opened = []
+real_startfile = os.startfile
+os.startfile = lambda path: opened.append(path)
+app.update_ver = "99.0.0"
+check(app.upd_label() == app.t("upd_get", v="99.0.0"), "설치본이 아니면 버튼은 '받기'")
+app.open_release()
+check(opened == [deskcal.RELEASES_PAGE] and app._upd_state is None,
+      "설치본이 아니면 다운로드 페이지를 엶")
+deskcal.is_installed = lambda: True
+check(app.upd_label() == app.t("upd_install", v="99.0.0"), "설치본이면 버튼은 '설치하고 다시 시작'")
+ran = []
+app.run_installer = lambda path: ran.append(path)
+deskcal.fetch_release = lambda timeout=8: {"version": "99.0.0", "setup_url": pathlib.Path(src).as_uri(),
+                                           "sha256": good, "sha_url": ""}
+app.open_release()
+t_end = time.time() + 10
+while not ran and time.time() < t_end:
+    app.update()
+    time.sleep(0.05)
+check(ran and os.path.basename(ran[0]) == "DeskCal-99.0.0-Setup.exe"
+      and open(ran[0], "rb").read() == blob and app._upd_state[0] == "install",
+      "설치본: 받아서 확인한 뒤 설치 프로그램을 실행")
+app._upd_state = None
+shown = []
+deskcal.DeskCal.notice = lambda self, msg: shown.append(msg)
+deskcal.fetch_release = lambda timeout=8: {"version": "99.0.0", "setup_url": pathlib.Path(src).as_uri(),
+                                           "sha256": "0" * 64, "sha_url": ""}
+ran.clear()
+opened.clear()
+app.open_release()
+t_end = time.time() + 10
+while not opened and time.time() < t_end:
+    app.update()
+    time.sleep(0.05)
+check(not ran and opened == [deskcal.RELEASES_PAGE] and shown and app._upd_state is None,
+      "해시가 다르면 설치하지 않고 다운로드 페이지로")
+deskcal.DeskCal.notice = orig_notice
+os.startfile = real_startfile
+app.destroy()
+
 # ------------------------------------------------------------------
 n_fail = RESULTS.count(False)
 print("\n%d개 중 %d개 통과%s" % (len(RESULTS), len(RESULTS) - n_fail,

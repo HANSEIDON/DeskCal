@@ -522,6 +522,9 @@ TEXT = {
         "up_this_week": "이번 주", "up_next_week": "다음 주", "up_later": "그 이후",
         "tip_upcoming": "전체 보기",
         "upd_check": "새 버전 확인 (하루 한 번)", "upd_get": "DeskCal {v} 받기",
+        "upd_install": "DeskCal {v} 설치하고 다시 시작", "upd_dl": "받는 중… {p}%",
+        "upd_installing": "설치 중… 곧 다시 켜져요",
+        "upd_fail": "자동으로 업데이트하지 못했어요. 다운로드 페이지를 열게요.\n({why})",
         "export_ics": ".ics 내보내기 (Google · Outlook · Apple)",
         "backup_out": "백업 내보내기", "backup_in": "백업 가져오기",
         "backup_confirm": "지금의 일정·시간표·설정을 이 백업으로 바꿀까요?\n지금 데이터는 먼저 따로 저장해 두고, Ctrl+Z 로도 되돌릴 수 있어요.",
@@ -627,6 +630,9 @@ TEXT = {
         "up_this_week": "This week", "up_next_week": "Next week", "up_later": "Later",
         "tip_upcoming": "Show all",
         "upd_check": "Check for updates (once a day)", "upd_get": "Download DeskCal {v}",
+        "upd_install": "Update to {v} and restart", "upd_dl": "Downloading… {p}%",
+        "upd_installing": "Installing… DeskCal will restart",
+        "upd_fail": "Couldn't update automatically. Opening the download page instead.\n({why})",
         "export_ics": "Export .ics (Google · Outlook · Apple)",
         "backup_out": "Export backup", "backup_in": "Import backup",
         "backup_confirm": "Replace your events, timetable and settings with this backup?\nYour current data is saved separately first, and Ctrl+Z also undoes it.",
@@ -733,6 +739,9 @@ TEXT = {
         "up_this_week": "本周", "up_next_week": "下周", "up_later": "以后",
         "tip_upcoming": "查看全部",
         "upd_check": "检查更新（每天一次）", "upd_get": "下载 DeskCal {v}",
+        "upd_install": "更新到 {v} 并重启", "upd_dl": "下载中… {p}%",
+        "upd_installing": "正在安装… 稍后会自动重启",
+        "upd_fail": "无法自动更新，将打开下载页面。\n（{why}）",
         "export_ics": "导出 .ics（Google · Outlook · Apple）",
         "backup_out": "导出备份", "backup_in": "导入备份",
         "backup_confirm": "用这份备份替换现在的日程、课表和设置吗？\n当前数据会先另存一份，也可以用 Ctrl+Z 撤销。",
@@ -1777,13 +1786,81 @@ def version_tuple(v):
     return tuple(int(x) for x in re.findall(r"\d+", v or "")[:3])
 
 
-def fetch_latest_version(timeout=8):
-    """GitHub 에 올라온 최신 버전 번호 ('1.2.3'). 보내는 정보는 없다."""
+RELEASES_DL = "https://github.com/HANSEIDON/DeskCal/releases/download/"
+
+
+def fetch_release(timeout=8):
+    """GitHub 의 최신 릴리스: {'version', 'setup_url', 'sha256', 'sha_url'}. 보내는 정보는 없다.
+    설치 파일은 이 저장소의 릴리스 주소에 있는 'DeskCal-<버전>-Setup.exe' 만 인정한다."""
     req = urllib.request.Request(RELEASES_API, headers={
         "User-Agent": "DeskCal", "Accept": "application/vnd.github+json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         data = json.loads(r.read(400000).decode("utf-8"))
-    return str(data.get("tag_name") or "").lstrip("vV")
+    ver = str(data.get("tag_name") or "").lstrip("vV")
+    out = {"version": ver, "setup_url": "", "sha256": "", "sha_url": ""}
+    for a in data.get("assets") or []:
+        name, link = str(a.get("name") or ""), str(a.get("browser_download_url") or "")
+        if not link.startswith(RELEASES_DL):
+            continue
+        if name == "DeskCal-%s-Setup.exe" % ver:
+            out["setup_url"] = link
+            digest = str(a.get("digest") or "")          # GitHub 이 계산해 주는 값
+            if digest.startswith("sha256:"):
+                out["sha256"] = digest[7:].lower()
+        elif name == "DeskCal-%s-Setup.exe.sha256" % ver:
+            out["sha_url"] = link
+    return out
+
+
+def fetch_latest_version(timeout=8):
+    """GitHub 에 올라온 최신 버전 번호 ('1.2.3')."""
+    return fetch_release(timeout)["version"]
+
+
+def download_verified(url, dest, sha256, progress=None, timeout=30, limit=300 * 1024 * 1024):
+    """url 을 dest 로 받는다. SHA-256 이 sha256 과 다르면 받은 것을 지우고 ValueError.
+    (다 받아 확인하기 전에는 dest 가 생기지 않는다)"""
+    part = dest + ".part"
+    h, got = hashlib.sha256(), 0
+    req = urllib.request.Request(url, headers={"User-Agent": "DeskCal"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r, open(part, "wb") as f:
+            total = int(r.headers.get("Content-Length") or 0)
+            while True:
+                chunk = r.read(262144)
+                if not chunk:
+                    break
+                got += len(chunk)
+                if got > limit:
+                    raise ValueError("file too large")
+                h.update(chunk)
+                f.write(chunk)
+                if progress:
+                    progress(got, total)
+        if h.hexdigest().lower() != (sha256 or "").lower():
+            raise ValueError("checksum mismatch")
+        os.replace(part, dest)
+    finally:
+        if os.path.exists(part):
+            os.remove(part)
+    return dest
+
+
+def is_installed():
+    """Setup.exe 로 설치한 실행본인지 (제거 프로그램이 옆에 있다). 그럴 때만 앱 안에서
+    업데이트한다. 압축을 풀어 쓰는 실행본이나 소스 실행은 다운로드 페이지를 연다."""
+    return FROZEN and os.path.exists(os.path.join(os.path.dirname(sys.executable),
+                                                  "unins000.exe"))
+
+
+def update_script(setup, exe):
+    """설치 프로그램을 조용히 돌리고, 끝나면 앱을 다시 켜는 배치 파일의 내용.
+    앱이 꺼진 뒤에 돌아야 해서(실행 중이면 파일을 못 바꾼다) 따로 띄운다."""
+    return ("@echo off\r\n"
+            "chcp 65001 >nul\r\n"
+            'start "" /wait "%s" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART\r\n'
+            'start "" "%s"\r\n'
+            'del "%%~f0"\r\n' % (setup, exe))
 
 
 class DeskCal(tk.Tk):
@@ -1834,6 +1911,7 @@ class DeskCal(tk.Tk):
         self._wheel, self._wheel_t = 0, 0.0
         self._cls_sig = None
         self._upd_q, self._upd_busy = queue.Queue(), False
+        self._upd_state, self._upd_btn, self._upd_dl_q = None, None, queue.Queue()
         latest = self.conf.get("update_latest")
         self.update_ver = latest if (latest and version_tuple(str(latest))
                                      > version_tuple(__version__)) else None
@@ -5022,8 +5100,9 @@ class DeskCal(tk.Tk):
         self.panel_head(self.t("settings"))
         box = self.scroll_area(self.panel)
         if self.update_ver:
-            self.button(box, self.t("upd_get", v=self.update_ver), self.open_release,
-                        "primary", 11).pack(fill="x", pady=(0, self.px(4)))
+            self._upd_btn = self.button(box, self.upd_label(), self.open_release,
+                                        "primary", 11)
+            self._upd_btn.pack(fill="x", pady=(0, self.px(4)))
         self.seg(box, self.t("lang"),
                  [(code, TEXT[code]["lang_name"], code == self.lang) for code in TEXT],
                  self.set_lang)
@@ -5230,11 +5309,108 @@ class DeskCal(tk.Tk):
         self.save_conf()
         self.render_panel()
 
+    def upd_label(self):
+        st = self._upd_state
+        if st and st[0] == "dl":
+            return self.t("upd_dl", p=st[1])
+        if st:
+            return self.t("upd_installing")
+        return self.t("upd_install" if is_installed() else "upd_get", v=self.update_ver)
+
+    def refresh_upd_btn(self):
+        b = self._upd_btn
+        try:
+            if b is not None and b.winfo_exists():
+                b.config(text=self.upd_label())
+        except tk.TclError:
+            pass
+
     def open_release(self):
+        """업데이트 버튼. 설치본이면 설치 파일을 받아 확인한 뒤 바로 설치하고 다시 켠다.
+        그 밖에는(압축본·소스 실행) 다운로드 페이지를 연다."""
+        if self._upd_state:
+            return                              # 이미 받는 중
+        if not is_installed():
+            os.startfile(RELEASES_PAGE)
+            return
+        self._upd_state = ("dl", 0)
+        self.refresh_upd_btn()
+        q = self._upd_dl_q = queue.Queue()
+
+        def work():
+            try:
+                rel = fetch_release()
+                if not rel["setup_url"]:
+                    raise ValueError("no installer in the release")
+                sha = rel["sha256"]
+                if not sha and rel["sha_url"]:  # 릴리스에 같이 올린 .sha256 파일
+                    req = urllib.request.Request(rel["sha_url"], headers={"User-Agent": "DeskCal"})
+                    with urllib.request.urlopen(req, timeout=15) as r:
+                        sha = (r.read(4096).decode("utf-8", "replace").split() or [""])[0].lower()
+                if not re.fullmatch(r"[0-9a-f]{64}", sha or ""):
+                    raise ValueError("no checksum for the installer")
+                folder = os.path.join(APP_DIR, "update")
+                os.makedirs(folder, exist_ok=True)
+                dest = os.path.join(folder, "DeskCal-%s-Setup.exe" % rel["version"])
+                download_verified(rel["setup_url"], dest, sha,
+                                  lambda g, t: q.put(("dl", int(g * 100 / t) if t else 0)))
+                q.put(("ok", dest))
+            except Exception as e:
+                q.put(("fail", "%s: %s" % (type(e).__name__, e)))
+        threading.Thread(target=work, daemon=True, name="update-dl").start()
+        self._jobs["upd_dl"] = self.after(200, self.update_poll)
+
+    def update_poll(self):
+        last = None
+        try:
+            while True:
+                last = self._upd_dl_q.get_nowait()
+        except queue.Empty:
+            pass
+        if last and last[0] == "fail":
+            self.update_failed(last[1])
+            return
+        if last and last[0] == "ok":
+            self._upd_state = ("install", 0)
+            self.refresh_upd_btn()
+            self.run_installer(last[1])
+            return
+        if last:
+            self._upd_state = last
+            self.refresh_upd_btn()
+        self._jobs["upd_dl"] = self.after(200, self.update_poll)
+
+    def update_failed(self, why):
+        """받기·확인·실행 어디서든 실패하면 예전처럼 다운로드 페이지를 연다."""
+        self._upd_state = None
+        self.refresh_upd_btn()
+        log("자동 업데이트 실패: %s" % why)
+        self.notice(self.t("upd_fail", why=why))
         os.startfile(RELEASES_PAGE)
+
+    def run_installer(self, setup):
+        exe = sys.executable
+        if any(ch in setup + exe for ch in '"%'):      # 배치 파일에 안전하게 적을 수 없는 경로
+            self.update_failed("unsupported path")
+            return
+        try:
+            bat = os.path.join(os.path.dirname(setup), "update.bat")
+            with open(bat, "w", encoding="utf-8", newline="") as f:
+                f.write(update_script(setup, exe))
+            # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP: 창 없이, 앱이 꺼져도 계속 돈다
+            subprocess.Popen(["cmd.exe", "/c", bat], creationflags=0x08000000 | 0x00000200,
+                             close_fds=True)
+        except OSError as e:
+            self.update_failed(str(e))
+            return
+        log("업데이트 설치 시작: %s" % os.path.basename(setup))
+        self.after(400, self.quit_app)          # 앱이 꺼져야 설치 프로그램이 파일을 바꿀 수 있다
 
     def update_tick(self):
         try:
+            if not getattr(self, "_upd_cleaned", False) and not self._upd_state:
+                self._upd_cleaned = True       # 지난 업데이트 때 받아 둔 설치 파일을 치운다
+                shutil.rmtree(os.path.join(APP_DIR, "update"), ignore_errors=True)
             last = float(self.conf.get("update_checked", 0) or 0)
             if (self.conf.get("update_check", True) and not self._upd_busy
                     and time.time() - last > 20 * 3600):

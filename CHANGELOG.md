@@ -11,6 +11,11 @@
   forward. Classes that don't meet this week are dashed (issue #2).
 - **Week ranges.** Each class has a weeks box: `1-8` for a half-semester course, `1,3,5-7`
   for any set of weeks, blank for the whole semester (issue #2).
+- **Update in place.** When a new version is out, the button in settings now downloads
+  the installer, checks its SHA-256 against the value GitHub publishes for the release, installs
+  it and restarts DeskCal. This works for the installed (Setup.exe) version; the zip version
+  and running from source still open the download page. If anything fails, the download page
+  opens as before.
 - **Week numbers.** **⚙ → This week** sets which week of the semester it is. Odd / even
   follows the number, the timetable title shows it, and the calendar shows week numbers
   down the left side.

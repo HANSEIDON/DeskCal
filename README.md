@@ -170,8 +170,10 @@ add 12 entries to `config.json`:
 <details>
 <summary>Update or uninstall</summary>
 
-- **Update:** quit DeskCal and replace the `DeskCal` folder with the new one. Your data is
-  kept, because it's stored in `%LOCALAPPDATA%\DeskCal`.
+- **Update:** when a new version is out, a dot appears on **⚙**. Open settings and click
+  **Update to … and restart**; DeskCal downloads the installer, verifies it and restarts.
+  (Zip version: quit DeskCal and replace the `DeskCal` folder.) Your data is kept, because
+  it's stored in `%LOCALAPPDATA%\DeskCal`.
 - **Uninstall:** turn off **Start with Windows**, quit, and delete the `DeskCal` folder. To
   remove your data too, delete `%LOCALAPPDATA%\DeskCal`. DeskCal changes nothing else on
   your system.
