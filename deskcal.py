@@ -28,7 +28,7 @@ import zipfile
 import zlib
 from tkinter import filedialog
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 FROZEN = getattr(sys, "frozen", False) or "__compiled__" in globals()   # exe(Nuitka/PyInstaller)
 RES_DIR = getattr(sys, "_MEIPASS", HERE)        # 함께 묶인 파일(글꼴·seeds)이 있는 곳
