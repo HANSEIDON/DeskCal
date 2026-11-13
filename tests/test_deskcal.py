@@ -1329,6 +1329,41 @@ check(ics.count("SUMMARY:后半学期") == 3 and ics.count("SUMMARY:前半学期
       % (ics.count("SUMMARY:后半学期"), ics.count("SUMMARY:前半学期")))
 app.destroy()
 
+
+print("\n== 드래그 선택 민감도 · 새 수업 '추가' 버튼 ==")
+app, d = fresh()
+app.set_view("tt")
+app.update()
+
+
+class Ev2:
+    pass
+
+
+e2 = Ev2()
+e2.x, e2.y = app.tgut + 1.5 * app.tcw, app.thh + 3 * app.tch - 2     # 화요일 3교시의 아래 끝
+app.on_tt_click(e2)
+e2.y += 5                                                           # 손이 밀려 4교시로 3px 넘어감
+app.on_tt_drag(e2)
+check(app.tt_multi is None and app.tt_sel == (1, 3), "클릭하다 조금 밀린 것은 여러 칸 선택이 아님")
+e2.y += app.tch * 0.5
+app.on_tt_drag(e2)
+check(app.tt_multi == {(1, 3), (1, 4)}, "충분히 끌면 여러 칸이 골라짐")
+app.on_tt_release(e2)
+e2.x, e2.y = app.tgut + 0.5 * app.tcw, app.thh + 0.5 * app.tch
+app.on_tt_click(e2)
+LB = lambda: [w.cget("text") for w in walk(app.panel, []) if w.winfo_class() == "Label"]
+check(app.tt_multi is None and app.t("add") in LB(), "빈 칸에는 '추가' 버튼이 보임")
+app.tt_save_new()
+check("0-1" not in app.tt, "과목 이름 없이 '추가'를 눌러도 아무것도 저장하지 않음")
+app.tt_title.insert(0, "새 수업")
+app.tt_save_new()
+check(app.tt.get("0-1", {}).get("title") == "새 수업" and app.t("add") not in LB()
+      and app.t("del_class") in LB(), "'추가'를 누르면 저장되고 버튼이 '지우기'로 바뀜")
+app.tt_add_alt()
+check(app.t("add") in LB(), "같은 시간에 수업을 더 넣을 때도 '추가' 버튼이 보임")
+app.destroy()
+
 # ------------------------------------------------------------------
 n_fail = RESULTS.count(False)
 print("\n%d개 중 %d개 통과%s" % (len(RESULTS), len(RESULTS) - n_fail,

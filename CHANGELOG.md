@@ -21,6 +21,10 @@
   only the first), and reads each class's first and last week, so half-semester courses
   come in with their range (issue #2).
 - `.ics` export follows week ranges.
+- Adding a class shows an **Add** button (Enter still works). Editing an existing class
+  saves automatically as before.
+- Dragging to select several periods needs a deliberate drag now; a click that slips a few
+  pixels across a cell border no longer selects two cells.
 
 ### Fixed
 

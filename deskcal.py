@@ -513,7 +513,7 @@ TEXT = {
         "week_bad": "주차를 읽지 못했어요 (예: 1-8 또는 1,3,5)",
         "week_need_no": "주차 범위를 쓰려면 설정에서 이번 주가 몇 주차인지 정해 주세요.",
         "tt_add_alt": "+ 이 시간에 다른 수업", "tt_new_chip": "새 수업",
-        "tt_add_hint": "같은 시간에 다른 주(单周·双周, 1-8주 등)에 듣는 수업을 추가해요. 과목 이름을 적으면 저장돼요.",
+        "tt_add_hint": "같은 시간에 다른 주(单周·双周, 1-8주 등)에 듣는 수업을 추가해요. 과목 이름을 적고 Enter 또는 추가를 누르세요.",
         "settings": "설정", "compact": "컴팩트", "close": "닫기",
         "rep_none": "반복 없음", "rep_weekly": "매주", "rep_biweekly": "격주", "rep_monthly": "매월",
         "tip_repeat": "반복 (누르면 바뀌어요). 여러 날 일정은 달력에서 마지막 날을 Shift+클릭하세요.",
@@ -547,7 +547,7 @@ TEXT = {
                      "꺼져 있습니다.\n클릭하면 다시 시도합니다.",
         "tt_read_fail": "시간표를 읽지 못해 저장이 꺼져 있습니다.",
         "tt_cell": "{wd}요일 {p}교시",
-        "tt_new": "빈 칸이에요. 과목 이름을 적으면 바로 저장돼요. 드래그하거나 Ctrl+클릭하면 여러 칸을 한 번에 고를 수 있어요.",
+        "tt_new": "빈 칸이에요. 과목 이름을 적고 Enter 또는 추가를 누르면 저장돼요. 드래그하거나 Ctrl+클릭하면 여러 칸을 한 번에 고를 수 있어요.",
         "tt_multi": "{n}칸 선택됨",
         "tt_multi_hint": "입력한 내용이 선택한 칸 모두에 들어가요. Ctrl+클릭으로 칸을 더하거나 뺄 수 있어요.",
         "tt_overwrite": "다른 수업 {n}칸을 덮어써요",
@@ -618,7 +618,7 @@ TEXT = {
         "week_bad": "Couldn't read the weeks (e.g. 1-8 or 1,3,5)",
         "week_need_no": "To use week ranges, set this week's number in settings.",
         "tt_add_alt": "+ Another class here", "tt_new_chip": "New class",
-        "tt_add_hint": "Add a class that meets in this slot on other weeks (odd / even, weeks 1-8 …). Type a course name to save it.",
+        "tt_add_hint": "Add a class that meets in this slot on other weeks (odd / even, weeks 1-8 …). Type a course name, then press Enter or Add.",
         "settings": "Settings", "compact": "Compact", "close": "Close",
         "rep_none": "Once", "rep_weekly": "Weekly", "rep_biweekly": "Biweekly", "rep_monthly": "Monthly",
         "tip_repeat": "Repeat (click to change). For a multi-day event, Shift+click the last day on the calendar.",
@@ -652,7 +652,7 @@ TEXT = {
                      "existing file.\nClick to try again.",
         "tt_read_fail": "Couldn't read the timetable. Saving is off.",
         "tt_cell": "{wd} · Period {p}",
-        "tt_new": "Empty slot. Type a course name and it saves automatically. Drag or Ctrl+click to select several periods at once.",
+        "tt_new": "Empty slot. Type a course name, then press Enter or Add. Drag or Ctrl+click to select several periods at once.",
         "tt_multi": "{n} periods selected",
         "tt_multi_hint": "What you enter goes into every selected period. Ctrl+click to add or remove periods.",
         "tt_overwrite": "Overwrites {n} periods of other classes",
@@ -724,7 +724,7 @@ TEXT = {
         "week_bad": "周次格式有误（如 1-8 或 1,3,5）",
         "week_need_no": "要使用周次范围，请先在设置里设定本周是第几周。",
         "tt_add_alt": "+ 同一时段的另一门课", "tt_new_chip": "新课程",
-        "tt_add_hint": "添加在同一时段、其他周次上的课程（单周／双周、1-8周等）。输入课程名即可保存。",
+        "tt_add_hint": "添加在同一时段、其他周次上的课程（单周／双周、1-8周等）。输入课程名后按回车或点“添加”。",
         "settings": "设置", "compact": "紧凑", "close": "关闭",
         "rep_none": "不重复", "rep_weekly": "每周", "rep_biweekly": "每两周", "rep_monthly": "每月",
         "tip_repeat": "重复（点击切换）。多日日程：在日历上按住 Shift 点击最后一天。",
@@ -757,7 +757,7 @@ TEXT = {
         "read_fail": "无法读取已保存的日程。\n为保护原文件，已暂停保存。\n点击重试。",
         "tt_read_fail": "无法读取课表，已暂停保存。",
         "tt_cell": "{wd} 第{p}节",
-        "tt_new": "空课时。输入课程名称即可自动保存。拖动或按住 Ctrl 点击可一次选择多节。",
+        "tt_new": "空课时。输入课程名称后按回车或点“添加”即可保存。拖动或按住 Ctrl 点击可一次选择多节。",
         "tt_multi": "已选 {n} 节",
         "tt_multi_hint": "输入的内容会填入所有选中的课时。按住 Ctrl 点击可增减课时。",
         "tt_overwrite": "将覆盖其他课程的 {n} 节",
@@ -3474,6 +3474,7 @@ class DeskCal(tk.Tk):
                     break
         self.tt_sel, self.tt_multi = cell, None
         self._tt_anchor, self._tt_base = cell, set()
+        self._tt_press, self._tt_dragging = (e.x, e.y), False
         self.draw_tt()
         self.render_panel()
         if not self.tt.get(self.tt_key(*cell)):
@@ -3495,6 +3496,7 @@ class DeskCal(tk.Tk):
             self.tt_sel = min(sel)
         self.tt_multi = sel if len(sel) > 1 else None
         self._tt_anchor, self._tt_base = cell, set(sel)
+        self._tt_press, self._tt_dragging = (e.x, e.y), False
         self.draw_tt()
         self.render_panel()
         return "break"
@@ -3502,6 +3504,14 @@ class DeskCal(tk.Tk):
     def on_tt_drag(self, e):
         if self.view != "tt" or not self._tt_anchor:
             return
+        press = getattr(self, "_tt_press", None)
+        if press and not getattr(self, "_tt_dragging", False):
+            # 클릭하다 손이 조금 밀린 것은 드래그로 보지 않는다. 칸 경계 근처를 누르면
+            # 몇 픽셀만 움직여도 옆 칸까지 골라져 버렸다. 칸 크기의 1/3 넘게 끌어야 시작한다.
+            need = max(self.px(10), min(self.tcw, self.tch) * 0.35)
+            if max(abs(e.x - press[0]), abs(e.y - press[1])) < need:
+                return
+            self._tt_dragging = True
         cur = self.tt_cell_at(e, clamp=True)
         (a, b), (c, d) = self._tt_anchor, cur
         rect = {(x, y) for x in range(min(a, c), max(a, c) + 1)
@@ -3841,6 +3851,10 @@ class DeskCal(tk.Tk):
         self.status_lbl = tk.Label(act, text="", bg=CARD, fg=OK, font=self.f(10))
         self.status_lbl.pack(side="left")
         self.del_btn = self.button(act, self.t("del_class"), self.tt_delete, "danger", 10)
+        if not it:
+            # 새로 넣을 때는 누를 버튼이 있어야 '저장됐다'는 확신이 든다 (Enter 로도 된다).
+            # 이미 있는 수업을 고칠 때는 지금처럼 자동 저장.
+            self.button(act, self.t("add"), self.tt_save_new, "primary", 11).pack(side="right")
         if it:
             self.del_btn.pack(side="right")
             if not multi:                      # 같은 시간에 다른 주의 수업 추가
@@ -4188,6 +4202,20 @@ class DeskCal(tk.Tk):
         self.render_panel()
         if it:
             self.set_status("saved")
+
+    def tt_save_new(self):
+        """'추가' 버튼: 적은 수업을 저장하고 패널을 '고치는 중' 상태로 바꾼다."""
+        try:
+            title = self.tt_title.get().strip()
+        except tk.TclError:
+            return
+        if not title:
+            self.tt_title.focus_set()
+            return
+        self.tt_commit()
+        self._draft = None
+        self.render_panel()
+        self.set_status("saved")
 
     def tt_pick_alt(self, i):
         """이 칸의 i 번째 수업을 고칠 대상으로 바꾼다."""
