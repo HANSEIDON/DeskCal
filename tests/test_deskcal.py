@@ -1455,44 +1455,55 @@ class W:
     pass
 
 
-CLOCK = [1000.0]                             # 휠 입력의 시각을 직접 정한다 (초)
+# 실제 터치패드에서 기록한 입력 ("간격ms/값"). 맨 앞 입력에서 달이 넘어가고, 그 직후의
+# 긴 간격(≈200ms)은 화면을 그리느라 입력이 밀린 것이다.
+FAST = ("16/-1200 187/-13320 32/-6720 15/-2760 16/-2760 15/-2880 16/-2640 16/-2760 15/-2160 "
+        "16/-2520 16/-2040 15/-2160 16/-1680 15/-1680 16/-1440 16/-1440 15/-1200 16/-1080 "
+        "16/-840 15/-720 16/-720 15/-480 16/-360 16/-360 15/-240 16/-240 16/-120 15/-120")
+LONG = ("15/360 250/2640 16/1560 16/840 15/840 16/720 15/840 16/720 16/840 15/720 16/840 16/720 "
+        "15/720 16/600 15/720 16/720 16/600 15/600 16/600 16/720 15/600 16/600 15/480 16/600 "
+        "16/600 15/480 16/480 16/480 15/480 16/480 15/480 16/480 16/360 15/480 16/360 16/120")
+SLOW = ("922/-360 250/-2640 31/-960 16/-480 15/-480 16/-600 16/-360 15/-600 16/-360 16/-600 "
+        "15/-360 16/-480 15/-360 16/-480 16/-360 15/-360 16/-360 16/-480 31/-600 15/-360 "
+        "16/-240 16/-360 15/-240 16/-240 16/-240 15/-120 16/-240 15/-120 16/-120 16/-120 "
+        "15/-120 16/-120 31/-120 31/-120")
+AGAIN = ("843/480 203/720 16/480 16/120 15/240 16/120 16/240 15/120 16/120 15/120 16/120 16/120 "
+         "31/120 31/120 328/480 250/1440 32/480 15/240 16/240 15/240 16/240 16/120 15/120 "
+         "16/240 16/120 15/120 31/120 16/120 47/120")
 
 
-def wheel(delta, gap_ms):
-    CLOCK[0] += gap_ms / 1000.0
-    ev = W()
-    ev.x_root, ev.y_root, ev.delta = app.cal.winfo_rootx() + 60, app.cal.winfo_rooty() + 90, delta
-    ev.time = int(CLOCK[0] * 1000)
-    app.on_wheel(ev)
+def replay(*seqs, pause_ms=2000):
+    """기록을 판정기에 넣고 넘어간 달 수(방향 포함)를 센다."""
+    g, now, n = deskcal.WheelGesture(), 50.0, 0
+    for seq in seqs:
+        now += pause_ms / 1000.0
+        for i, tok in enumerate(seq.split()):
+            gap, delta = (int(v) for v in tok.split("/"))
+            now += 0 if i == 0 else gap / 1000.0
+            n += g.feed(now, delta)[0]
+    return n
 
 
-def months_from(start):
-    return (app.shown.year - start.year) * 12 + app.shown.month - start.month
+check(replay(FAST) == -1, "실제 기록: 아주 빠르게 한 번 쓸기 = 한 달 (%d)" % replay(FAST))
+check(replay(LONG) == 1, "실제 기록: 관성이 긴 쓸기 = 한 달 (%d)" % replay(LONG))
+check(replay(SLOW) == -1, "실제 기록: 천천히 쓸기 = 한 달 (%d)" % replay(SLOW))
+check(replay(FAST, FAST, FAST) == -3, "세 번 쓸면 세 달 (%d)" % replay(FAST, FAST, FAST))
+check(replay(AGAIN) == 2, "실제 기록: 관성이 끝나기 전에 다시 쓸면 한 달 더 (%d)" % replay(AGAIN))
+check(replay(FAST, LONG, pause_ms=30) == 0, "바로 반대로 쓸면 한 달 돌아옴 (%d)" % replay(FAST, LONG, pause_ms=30))
+check(replay("0/120", "0/120", "0/-120", pause_ms=450) == 1, "휠 마우스는 끊어 돌리면 한 칸에 한 달")
+check(replay("0/120 80/120 80/120 80/120 80/120 80/120") == 1, "휠을 연달아 돌리는 동안은 한 달만")
 
-
-# 터치패드 한 번 쓸기: 빨라졌다가(쓸기) 느려지기만 한다(관성). 간격(ms)으로 적는다.
-SWIPE = [40, 25, 15, 12, 12, 14, 17, 21, 26, 33, 42, 55, 75, 100, 140, 200, 280]
 if app.winfo_containing(app.cal.winfo_rootx() + 60, app.cal.winfo_rooty() + 90) is app.cal:
-    m0 = app.shown
-    wheel(-120, 2000)
-    for g in SWIPE:
-        wheel(-120, g)
-    check(months_from(m0) == 1, "터치패드로 한 번 쓸면 관성까지 합쳐 한 달만 (%d달)" % months_from(m0))
-    wheel(-120, 90)                          # 관성이 아직 남아 있는데 손가락으로 다시 쓸기
-    for g in SWIPE[1:]:
-        wheel(-120, g)
-    check(months_from(m0) == 2, "관성이 끝나기 전에 다시 쓸어도 한 달 더 넘어감 (%d달)" % months_from(m0))
-    wheel(120, 60)                           # 반대로 쓸기
-    for g in SWIPE[1:9]:
-        wheel(120, g)
-    check(months_from(m0) == 1, "반대 방향으로 쓸면 바로 한 달 돌아옴 (%d달)" % months_from(m0))
-    wheel(120, 900)                          # 휠 마우스: 한 칸씩 끊어서
-    wheel(120, 900)
-    check(months_from(m0) == -1, "휠 마우스는 끊어 돌리면 한 칸에 한 달 (%d달)" % months_from(m0))
-    wheel(-120, 900)
-    for _ in range(6):                       # 휠을 일정한 빠르기로 계속 돌림
-        wheel(-120, 80)
-    check(months_from(m0) == 0, "휠을 연달아 돌리는 동안은 한 달만 (%d달)" % months_from(m0))
+    m0, clock = app.shown, 5000.0
+    for i, tok in enumerate(FAST.split()):
+        gap, delta = (int(v) for v in tok.split("/"))
+        clock += 2.0 if i == 0 else gap / 1000.0
+        ev = W()
+        ev.x_root, ev.y_root = app.cal.winfo_rootx() + 60, app.cal.winfo_rooty() + 90
+        ev.delta, ev.time = delta, int(clock * 1000)
+        app.on_wheel(ev)
+    moved = (app.shown.year - m0.year) * 12 + app.shown.month - m0.month
+    check(moved == 1, "달력 위에서 빠르게 한 번 쓸면 다음 달로만 (%d달)" % moved)
     app.go_today()
 else:
     print("SKIP - 달력이 다른 창에 가려 휠 테스트를 건너뜀")

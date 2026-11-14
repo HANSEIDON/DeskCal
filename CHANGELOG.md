@@ -14,9 +14,9 @@
 
 - Scrolling the calendar with a touchpad flipped through many months per swipe. One
   scroll gesture now moves one month, on a touchpad or a mouse wheel. A new gesture is
-  recognised by its speed (scrolling that was slowing down speeds up again), by a change
-  of direction, or by a pause, so swiping again before the inertia ends still works
-  (issue #3).
+  recognised by a pause, a change of direction, or scrolling that was slowing down
+  speeding up again, so swiping again before the inertia ends still works. The rules were
+  tuned against recorded touchpad input (issue #3).
 
 ## 1.3.1 — 2026-11-13
 
