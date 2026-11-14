@@ -5043,21 +5043,21 @@ class DeskCal(tk.Tk):
                 cv._sync()
             return
         if w is self.cal and self.view == "cal" and not self.compact:
-            # 휠 마우스는 한 칸(120)에 한 달. 터치패드는 한 번 쓸 때 작은 값이 수십 번,
-            # 손을 뗀 뒤에도 관성으로 계속 들어온다. 그걸 다 셌더니 한 번 쓸면 여러 달이
-            # 넘어갔다. 그래서 터치패드는 '한 번 쓸기 = 한 달' 로 한다: 한 달을 넘긴 뒤에는
-            # 입력이 잠깐(0.25초) 끊길 때까지 더 넘기지 않는다.
+            # 한 번의 스크롤 동작에 한 달만 넘긴다. 터치패드는 한 번 쓸 때 입력이 수십 번,
+            # 손을 뗀 뒤에도 관성으로 1초 넘게 들어온다. Tk 는 그 잘게 오는 값을 휠 한 칸
+            # (120) 단위로 묶어서 넘겨주기 때문에 휠 마우스와 구분할 수가 없다 (구분하려던
+            # 예전 코드는 터치패드에서 한 번 쓸면 여러 달이 넘어갔다). 그래서 기기와 상관없이
+            # 한 달을 넘긴 뒤에는 입력이 0.3초 끊길 때까지 더 넘기지 않는다.
             now = time.time()
-            if now - self._wheel_last > 0.25:      # 새 동작의 시작
+            if now - self._wheel_last > 0.3:       # 새 동작의 시작
                 self._wheel, self._wheel_lock = 0, False
             self._wheel_last = now
-            fine = abs(e.delta) < 120              # 터치패드처럼 잘게 오는 입력
-            if fine and self._wheel_lock:
+            if self._wheel_lock:
                 return
             self._wheel += e.delta
-            if abs(self._wheel) >= 120 and now - self._wheel_t > 0.2:
+            if abs(self._wheel) >= 120:
                 n = -1 if self._wheel > 0 else 1
-                self._wheel, self._wheel_t, self._wheel_lock = 0, now, fine
+                self._wheel, self._wheel_t, self._wheel_lock = 0, now, True
                 self.shift(n)
 
     def panel_head(self, text, count=None):

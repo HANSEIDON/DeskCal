@@ -12,8 +12,9 @@
 
 ### Fixed
 
-- Scrolling the calendar with a touchpad flipped through several months per swipe. One
-  swipe now moves one month; a mouse wheel still moves one month per notch (issue #3).
+- Scrolling the calendar with a touchpad flipped through many months per swipe. One
+  scroll gesture now moves one month, on a touchpad or a mouse wheel: after the month
+  changes, further input is ignored until scrolling pauses (issue #3).
 
 ## 1.3.1 — 2026-11-13
 

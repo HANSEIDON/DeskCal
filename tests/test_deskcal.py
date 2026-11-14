@@ -1470,14 +1470,18 @@ if app.winfo_containing(app.cal.winfo_rootx() + 60, app.cal.winfo_rooty() + 90) 
     for _ in range(40):                      # 터치패드로 한 번 쓸기: 작은 값 40번 + 관성
         wheel(-30)
     check(months_from(m0) == 1, "터치패드로 한 번 쓸면 한 달만 넘어감 (%d달)" % months_from(m0))
-    time.sleep(0.3)
+    for _ in range(30):                      # Tk 가 120 단위로 묶어 넘겨주는 터치패드 + 관성
+        wheel(-120)
+        time.sleep(0.02)
+    check(months_from(m0) == 1, "120 단위로 연달아 들어와도 같은 동작이면 더 넘기지 않음 (%d달)" % months_from(m0))
+    time.sleep(0.35)
     for _ in range(40):
         wheel(-30)
     check(months_from(m0) == 2, "잠깐 멈췄다 다시 쓸면 또 한 달 (%d달)" % months_from(m0))
-    time.sleep(0.3)
+    time.sleep(0.35)
     wheel(120)
     check(months_from(m0) == 1, "휠 마우스는 한 칸에 한 달 (%d달)" % months_from(m0))
-    time.sleep(0.3)
+    time.sleep(0.35)
     for _ in range(5):                       # 휠을 빠르게 여러 칸 돌려도 한꺼번에 날아가지 않는다
         wheel(120)
     check(months_from(m0) == 0, "휠을 빠르게 5칸 돌려도 한 달만 (%d달)" % months_from(m0))
