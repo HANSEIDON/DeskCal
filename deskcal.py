@@ -1917,7 +1917,8 @@ class DeskCal(tk.Tk):
         self.repeat = ""                   # 새 일정의 반복 (REPEATS)
         self._scroll = self._scroll_mode = None
         self._wheel, self._wheel_t = 0, 0.0
-        self._wheel_last, self._wheel_lock = 0.0, False
+        self._wh = {"last": 0.0, "acc": 0, "lock": False, "peak": 0.0, "low": None,
+                    "way": 0, "log": []}     # 달력 휠의 상태 (wheel_month)
         self._cls_sig = None
         self._upd_q, self._upd_busy = queue.Queue(), False
         self._upd_state, self._upd_btn, self._upd_dl_q = None, None, queue.Queue()
@@ -5043,22 +5044,51 @@ class DeskCal(tk.Tk):
                 cv._sync()
             return
         if w is self.cal and self.view == "cal" and not self.compact:
-            # 한 번의 스크롤 동작에 한 달만 넘긴다. 터치패드는 한 번 쓸 때 입력이 수십 번,
-            # 손을 뗀 뒤에도 관성으로 1초 넘게 들어온다. Tk 는 그 잘게 오는 값을 휠 한 칸
-            # (120) 단위로 묶어서 넘겨주기 때문에 휠 마우스와 구분할 수가 없다 (구분하려던
-            # 예전 코드는 터치패드에서 한 번 쓸면 여러 달이 넘어갔다). 그래서 기기와 상관없이
-            # 한 달을 넘긴 뒤에는 입력이 0.3초 끊길 때까지 더 넘기지 않는다.
-            now = time.time()
-            if now - self._wheel_last > 0.3:       # 새 동작의 시작
-                self._wheel, self._wheel_lock = 0, False
-            self._wheel_last = now
-            if self._wheel_lock:
-                return
-            self._wheel += e.delta
-            if abs(self._wheel) >= 120:
-                n = -1 if self._wheel > 0 else 1
-                self._wheel, self._wheel_t, self._wheel_lock = 0, now, True
-                self.shift(n)
+            self.wheel_month(e)
+
+    def wheel_month(self, e):
+        """달력 위의 휠: 스크롤 동작 한 번에 한 달.
+        터치패드는 한 번 쓸면 입력이 수십 번 들어오고, 손을 뗀 뒤에도 관성으로 1~2초 더
+        들어온다. '입력이 몇 초 끊기면 새 동작' 으로 보면 관성이 끝나기 전에 다시 쓴 것을
+        놓친다. 그래서 시간이 아니라 속도의 모양을 본다: 한 동작은 빨라졌다가(쓸기)
+        느려지기만 한다(관성). 느려지던 속도가 다시 확 빨라지면 손가락으로 새로 쓴 것이다.
+        방향이 바뀌거나 한참 조용했던 경우도 새 동작이다."""
+        st = self._wh
+        tm = getattr(e, "time", None)
+        now = tm / 1000.0 if isinstance(tm, (int, float)) and tm > 0 else time.time()
+        gap = now - st["last"]
+        st["last"] = now
+        way = 1 if e.delta > 0 else -1
+        speed = abs(e.delta) / max(gap, 0.004)         # 1초에 휠 몇 단위
+        why = ""
+        if gap > 0.6 or gap < 0:
+            why = "pause"
+        elif way != st["way"]:
+            why = "turn"
+        elif st["lock"]:
+            if st["low"] is None:                      # 아직 빨라지는 중이거나 막 느려지기 시작
+                if speed > st["peak"]:
+                    st["peak"] = speed
+                elif speed < 0.5 * st["peak"]:
+                    st["low"] = speed                  # 확실히 느려졌다: 이제부터는 관성
+            elif speed > 2.2 * st["low"] and speed > 0.3 * st["peak"]:
+                why = "faster"                         # 느려지다 다시 빨라짐 = 새로 쓸기
+            else:
+                st["low"] = min(st["low"], speed)
+        if self.conf.get("debug_wheel"):               # 터치패드마다 달라서, 맞출 때 쓰는 기록
+            if why and st["log"]:
+                log("wheel: " + " ".join(st["log"][-120:]))
+                st["log"] = []
+            st["log"].append("%d/%d%s" % (round(gap * 1000) if 0 <= gap < 10 else -1, e.delta,
+                                          "!" + why if why else ""))
+        if why:
+            st.update(acc=0, lock=False, peak=0.0, low=None, way=way)
+        if st["lock"]:
+            return
+        st["acc"] += e.delta
+        if abs(st["acc"]) >= 120:
+            st.update(acc=0, lock=True, peak=0.0, low=None)
+            self.shift(-way)
 
     def panel_head(self, text, count=None):
         """목록·설정 패널의 머리줄: 제목 + 닫기(×)."""

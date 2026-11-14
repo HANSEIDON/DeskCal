@@ -1455,9 +1455,14 @@ class W:
     pass
 
 
-def wheel(delta):
+CLOCK = [1000.0]                             # 휠 입력의 시각을 직접 정한다 (초)
+
+
+def wheel(delta, gap_ms):
+    CLOCK[0] += gap_ms / 1000.0
     ev = W()
     ev.x_root, ev.y_root, ev.delta = app.cal.winfo_rootx() + 60, app.cal.winfo_rooty() + 90, delta
+    ev.time = int(CLOCK[0] * 1000)
     app.on_wheel(ev)
 
 
@@ -1465,26 +1470,29 @@ def months_from(start):
     return (app.shown.year - start.year) * 12 + app.shown.month - start.month
 
 
+# 터치패드 한 번 쓸기: 빨라졌다가(쓸기) 느려지기만 한다(관성). 간격(ms)으로 적는다.
+SWIPE = [40, 25, 15, 12, 12, 14, 17, 21, 26, 33, 42, 55, 75, 100, 140, 200, 280]
 if app.winfo_containing(app.cal.winfo_rootx() + 60, app.cal.winfo_rooty() + 90) is app.cal:
     m0 = app.shown
-    for _ in range(40):                      # 터치패드로 한 번 쓸기: 작은 값 40번 + 관성
-        wheel(-30)
-    check(months_from(m0) == 1, "터치패드로 한 번 쓸면 한 달만 넘어감 (%d달)" % months_from(m0))
-    for _ in range(30):                      # Tk 가 120 단위로 묶어 넘겨주는 터치패드 + 관성
-        wheel(-120)
-        time.sleep(0.02)
-    check(months_from(m0) == 1, "120 단위로 연달아 들어와도 같은 동작이면 더 넘기지 않음 (%d달)" % months_from(m0))
-    time.sleep(0.35)
-    for _ in range(40):
-        wheel(-30)
-    check(months_from(m0) == 2, "잠깐 멈췄다 다시 쓸면 또 한 달 (%d달)" % months_from(m0))
-    time.sleep(0.35)
-    wheel(120)
-    check(months_from(m0) == 1, "휠 마우스는 한 칸에 한 달 (%d달)" % months_from(m0))
-    time.sleep(0.35)
-    for _ in range(5):                       # 휠을 빠르게 여러 칸 돌려도 한꺼번에 날아가지 않는다
-        wheel(120)
-    check(months_from(m0) == 0, "휠을 빠르게 5칸 돌려도 한 달만 (%d달)" % months_from(m0))
+    wheel(-120, 2000)
+    for g in SWIPE:
+        wheel(-120, g)
+    check(months_from(m0) == 1, "터치패드로 한 번 쓸면 관성까지 합쳐 한 달만 (%d달)" % months_from(m0))
+    wheel(-120, 90)                          # 관성이 아직 남아 있는데 손가락으로 다시 쓸기
+    for g in SWIPE[1:]:
+        wheel(-120, g)
+    check(months_from(m0) == 2, "관성이 끝나기 전에 다시 쓸어도 한 달 더 넘어감 (%d달)" % months_from(m0))
+    wheel(120, 60)                           # 반대로 쓸기
+    for g in SWIPE[1:9]:
+        wheel(120, g)
+    check(months_from(m0) == 1, "반대 방향으로 쓸면 바로 한 달 돌아옴 (%d달)" % months_from(m0))
+    wheel(120, 900)                          # 휠 마우스: 한 칸씩 끊어서
+    wheel(120, 900)
+    check(months_from(m0) == -1, "휠 마우스는 끊어 돌리면 한 칸에 한 달 (%d달)" % months_from(m0))
+    wheel(-120, 900)
+    for _ in range(6):                       # 휠을 일정한 빠르기로 계속 돌림
+        wheel(-120, 80)
+    check(months_from(m0) == 0, "휠을 연달아 돌리는 동안은 한 달만 (%d달)" % months_from(m0))
     app.go_today()
 else:
     print("SKIP - 달력이 다른 창에 가려 휠 테스트를 건너뜀")

@@ -13,8 +13,10 @@
 ### Fixed
 
 - Scrolling the calendar with a touchpad flipped through many months per swipe. One
-  scroll gesture now moves one month, on a touchpad or a mouse wheel: after the month
-  changes, further input is ignored until scrolling pauses (issue #3).
+  scroll gesture now moves one month, on a touchpad or a mouse wheel. A new gesture is
+  recognised by its speed (scrolling that was slowing down speeds up again), by a change
+  of direction, or by a pause, so swiping again before the inertia ends still works
+  (issue #3).
 
 ## 1.3.1 — 2026-11-13
 
