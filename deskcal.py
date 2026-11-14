@@ -507,6 +507,7 @@ def pick_font(root, lang):
 TEXT = {
     "ko": {
         "lang_name": "한국어",
+        "week_ranges": "주차 범위 쓰기 (반 학기 수업 · 주차 번호)",
         "part_am": "오전", "part_pm": "오후", "part_eve": "저녁",
         "week_n": "{n}주차", "week_now": "이번 주 (학기 몇 번째 주인지)",
         "week_unset_hint": "+ 를 눌러 이번 주가 몇 주차인지 정하면 '1-8주' 같은 주차 범위가 맞게 표시돼요.",
@@ -616,6 +617,7 @@ TEXT = {
     },
     "en": {
         "lang_name": "English",
+        "week_ranges": "Week ranges (half-semester classes, week numbers)",
         "part_am": "Morning", "part_pm": "Afternoon", "part_eve": "Evening",
         "week_n": "Week {n}", "week_now": "This week (week of the semester)",
         "week_unset_hint": "Press + to set which week of the semester this is, so week ranges like 1-8 show correctly.",
@@ -726,6 +728,7 @@ TEXT = {
     },
     "zh": {
         "lang_name": "中文",
+        "week_ranges": "使用周次范围（半学期课程 · 周次编号）",
         "part_am": "上午", "part_pm": "下午", "part_eve": "晚上",
         "week_n": "第{n}周", "week_now": "本周（学期第几周）",
         "week_unset_hint": "点 + 设置本周是第几周，“1-8周”这类周次范围才能正确显示。",
@@ -1954,6 +1957,8 @@ class DeskCal(tk.Tk):
         if not isinstance(self.series, list):
             self.series, self.sr_ok = [], False
         self.conf, _ = load_json(CONF_FILE, {})
+        if "week_ranges" not in self.conf and any(it.get("weeks") for _, it in all_items(self.tt)):
+            self.conf["week_ranges"] = True        # 이미 주차 범위를 쓰고 있었다
         self.normalize_exam_dates()
         self.lang = self.conf.get("lang") if self.conf.get("lang") in TEXT else "en"
         FONT = pick_font(self, self.lang)
@@ -2175,9 +2180,23 @@ class DeskCal(tk.Tk):
         """第1周의 월요일. 정해 두지 않았으면 None."""
         return iso_date(self.conf.get("week1"))
 
+    @property
+    def week_ranges(self):
+        """주차 범위 기능(반 학기 수업의 '1-8', 주차 번호)을 쓰는지. 기본은 끔: 쓰지 않는
+        사람에게는 입력칸과 설정이 늘어나기만 한다. 주차 범위가 있는 수업을 가져오거나
+        이미 가지고 있으면 스스로 켜진다. 꺼져 있으면 범위는 무시하고 单/双만 본다
+        (적어 둔 범위는 지우지 않는다)."""
+        return bool(self.conf.get("week_ranges", False))
+
+    def set_week_ranges(self, on):
+        self.tt_commit()
+        self.conf["week_ranges"] = bool(on)
+        self.save_conf()
+        self.render()
+
     def week_no(self, d):
-        """그 날이 학기 몇 번째 주인지. 第1周를 모르면 None."""
-        w1 = self.week1()
+        """그 날이 학기 몇 번째 주인지. 第1周를 모르거나 주차 범위를 쓰지 않으면 None."""
+        w1 = self.week1() if self.week_ranges else None
         return None if not w1 else (self.monday_of(d) - w1).days // 7 + 1
 
     def is_odd_week(self, d):
@@ -3530,7 +3549,7 @@ class DeskCal(tk.Tk):
             extra = it.get("room", "")
             if kind != "all":
                 extra = (extra + " · " if extra else "") + self.t("chip_" + kind)
-            if it.get("weeks"):
+            if it.get("weeks") and self.week_ranges:
                 extra = (extra + " · " if extra else "") + it["weeks"]
             if extra and (y1 - y0) > lh * (len(lines) + 0.9) + self.px(6):
                 lines.append((self.fit(extra, f_sub, inner, False), f_sub, sub, False))
@@ -3929,7 +3948,8 @@ class DeskCal(tk.Tk):
                 on = i == 0 and not self._tt_adding
                 text = x.get("title", "")
                 tag = (self.t("chip_" + x["week"]) if x.get("week", "all") != "all" else "")
-                tag = " · ".join(v for v in (tag, x.get("weeks", "")) if v)
+                tag = " · ".join(v for v in (tag, x.get("weeks", "") if self.week_ranges else "")
+                                 if v)
                 text = self.fit(text + (" · " + tag if tag else ""), self.fpx(11), room_w, on)
                 b = tk.Label(chips, text=text, bg=ACCENT if on else off_bg,
                              fg=ACCENT_INK if on else FG, font=self.f(11, on),
@@ -3988,16 +4008,18 @@ class DeskCal(tk.Tk):
             b.bind("<Button-1>", lambda e, kk=k: self.tt_set_week(kk))
         # 주차 범위: 1-8 (반 학기), 1,3,5 (띄엄띄엄). 비우면 학기 내내.
         self.tt_weeks = it.get("weeks", "") if it else ""
-        self.tt_weeks_e = self.hint_entry(form, 11, self.t("weeks_hint"))
-        self.tt_weeks_e.insert(0, draft.get("weeks", self.tt_weeks) if draft else self.tt_weeks)
-        self.tt_weeks_e.grid(row=3, column=1, sticky="ew", ipady=self.px(4), pady=self.px(3))
-        self.tt_weeks_e.bind("<Return>", lambda _: self.tt_enter())
-        self.tt_weeks_e.bind("<FocusOut>", lambda _: self.tt_commit(), add="+")
+        self.tt_weeks_e = None                 # 주차 범위를 쓸 때만 칸을 보여준다
+        if self.week_ranges:
+            self.tt_weeks_e = self.hint_entry(form, 11, self.t("weeks_hint"))
+            self.tt_weeks_e.insert(0, draft.get("weeks", self.tt_weeks) if draft else self.tt_weeks)
+            self.tt_weeks_e.grid(row=3, column=1, sticky="ew", ipady=self.px(4), pady=self.px(3))
+            self.tt_weeks_e.bind("<Return>", lambda _: self.tt_enter())
+            self.tt_weeks_e.bind("<FocusOut>", lambda _: self.tt_commit(), add="+")
         self.field_label(form, self.t("color"), 4)
         self.tt_color = pc(it.get("color", getattr(self, "tt_color", PALETTE[4])))
         self.swatches(form, self.tt_color, self.tt_set_color).grid(row=4, column=1,
                                                                     sticky="w")
-        if self.tt_weeks and self.week1() is None:
+        if self.week_ranges and self.tt_weeks and self.week1() is None:
             tk.Label(self.panel, text=self.t("week_need_no"), bg=CARD, fg=SUN, font=self.f(10),
                      anchor="w", justify="left", wraplength=pw - self.px(8)
                      ).pack(fill="x", pady=(self.px(4), 0))
@@ -4156,7 +4178,8 @@ class DeskCal(tk.Tk):
         """패널을 다시 그려도 적던 내용이 살아남도록 지금 값을 담아 둔다."""
         try:
             d = {"cell": self.tt_sel, "title": self.tt_title.get(),
-                 "room": self.tt_room.get(), "weeks": self.tt_weeks_e.get()}
+                 "room": self.tt_room.get(),
+                 "weeks": self.tt_weeks_e.get() if self.tt_weeks_e is not None else self.tt_weeks}
         except (tk.TclError, AttributeError):
             return None
         for k in EXAM_KEYS:
@@ -4183,6 +4206,8 @@ class DeskCal(tk.Tk):
             self.exam_vals[k][1] = tm if tm is not None else raw
         bad_weeks = False
         try:                                    # 주차 범위: 읽을 수 있으면 '1-8' 꼴로 정리한다
+            if self.tt_weeks_e is None:
+                raise AttributeError
             raw = self.tt_weeks_e.get().strip()
             nw = norm_weeks(raw)
             if nw is None:
@@ -5235,30 +5260,38 @@ class DeskCal(tk.Tk):
             for i in range(len(SIZES))]
         self.seg(box, self.t("size"), sizes,
                  lambda i: self.set_compact() if i < 0 else self.set_size(i))
-        # 이번 주가 몇 주차인지: − / + 로 맞춘다. 单/双은 번호의 홀짝을 따른다.
-        tk.Label(box, text=self.t("week_now"), bg=CARD, fg=MUTED, font=self.f(11), anchor="w"
-                 ).pack(fill="x", pady=(self.px(12), self.px(5)))
-        wrow = tk.Frame(box, bg=CARD)
-        wrow.pack(fill="x")
-        off_bg = mix(CARD, FG, 0.13)
-        for text, delta in (("−", -1), (None, 0), ("+", 1)):
-            if text is None:
-                tk.Label(wrow, text=self.week_label(self.today), bg=ACCENT, fg=ACCENT_INK,
-                         font=self.f(12, True), padx=self.px(12), pady=self.px(6)
-                         ).pack(side="left", padx=(0, self.px(5)))
-                continue
-            b = tk.Label(wrow, text=text, bg=off_bg, fg=FG, font=self.f(12, True),
-                         padx=self.px(13), pady=self.px(6), cursor="hand2")
-            b.pack(side="left", padx=(0, self.px(5)))
-            b.bind("<Button-1>", lambda e, dd=delta: self.step_week(dd))
-            b.bind("<Enter>", lambda e: e.widget.config(bg=mix(CARD, FG, 0.24)), add="+")
-            b.bind("<Leave>", lambda e: e.widget.config(bg=off_bg), add="+")
-        if self.week_no(self.today) is None:
-            tk.Label(box, text=self.t("week_unset_hint"), bg=CARD, fg=DIM, font=self.f(10),
-                     anchor="w", justify="left", wraplength=self.panel_w - self.px(16)
-                     ).pack(fill="x", pady=(self.px(5), 0))
+        if self.week_ranges:
+            # 이번 주가 몇 주차인지: − / + 로 맞춘다. 单/双은 번호의 홀짝을 따른다.
+            tk.Label(box, text=self.t("week_now"), bg=CARD, fg=MUTED, font=self.f(11), anchor="w"
+                     ).pack(fill="x", pady=(self.px(12), self.px(5)))
+            wrow = tk.Frame(box, bg=CARD)
+            wrow.pack(fill="x")
+            off_bg = mix(CARD, FG, 0.13)
+            for text, delta in (("−", -1), (None, 0), ("+", 1)):
+                if text is None:
+                    tk.Label(wrow, text=self.week_label(self.today), bg=ACCENT, fg=ACCENT_INK,
+                             font=self.f(12, True), padx=self.px(12), pady=self.px(6)
+                             ).pack(side="left", padx=(0, self.px(5)))
+                    continue
+                b = tk.Label(wrow, text=text, bg=off_bg, fg=FG, font=self.f(12, True),
+                             padx=self.px(13), pady=self.px(6), cursor="hand2")
+                b.pack(side="left", padx=(0, self.px(5)))
+                b.bind("<Button-1>", lambda e, dd=delta: self.step_week(dd))
+                b.bind("<Enter>", lambda e: e.widget.config(bg=mix(CARD, FG, 0.24)), add="+")
+                b.bind("<Leave>", lambda e: e.widget.config(bg=off_bg), add="+")
+            if self.week_no(self.today) is None:
+                tk.Label(box, text=self.t("week_unset_hint"), bg=CARD, fg=DIM, font=self.f(10),
+                         anchor="w", justify="left", wraplength=self.panel_w - self.px(16)
+                         ).pack(fill="x", pady=(self.px(5), 0))
+        else:
+            odd = self.is_odd_week(self.today)
+            self.seg(box, self.t("parity"),
+                     [(True, self.t("set_odd"), odd), (False, self.t("set_even"), not odd)],
+                     self.set_week_kind)
         tk.Frame(box, bg=LINE, height=1).pack(fill="x", pady=(self.px(14), self.px(8)))
         self.toggle_row(box, self.t("weekend_tt"), self.weekend_tt, self.toggle_weekend_tt)
+        self.toggle_row(box, self.t("week_ranges"), self.week_ranges,
+                        lambda: self.set_week_ranges(not self.week_ranges))
         auto = autostart_enabled()
         self.toggle_row(box, self.t("autostart"), auto,
                         lambda: (self.set_autostart_pref(not auto), self.render_panel()))
@@ -5292,7 +5325,7 @@ class DeskCal(tk.Tk):
         self.tt_commit()
         text = build_ics(self.events, self.series, self.courses, self.tt, self.periods,
                          self.anchor(), self.today, lambda k: self.t("exam_" + k),
-                         week1=self.week1())
+                         week1=self.week1() if self.week_ranges else None)
         show = path is None
         path = path or os.path.join(documents_dir(), "DeskCal.ics")
         try:
@@ -5359,7 +5392,7 @@ class DeskCal(tk.Tk):
             self.courses = data["courses.json"]
             self.save_courses()
         conf = data.get("config.json") or {}
-        for k in ("lang", "theme", "glass", "size", "compact", "color", "week_anchor", "week1",
+        for k in ("lang", "theme", "glass", "size", "compact", "color", "week_anchor", "week1", "week_ranges",
                   "periods", "weekend_tt"):
             if k in conf:
                 self.conf[k] = conf[k]
@@ -6116,6 +6149,7 @@ class DeskCal(tk.Tk):
                     new = {"title": title, "room": v[0], "color": colors[title], "week": v[1]}
                     if len(v) > 2 and v[2]:
                         new["weeks"] = v[2]
+                        self.conf["week_ranges"] = True    # 반 학기 수업이 있다: 주차 범위를 켠다
                     k = self.tt_key(di, p)           # 같은 시간의 다른 수업은 지우지 않고 뒤에 둔다
                     items = cell_items(self.tt, k)
                     items.insert(placed.get(k, 0), new)

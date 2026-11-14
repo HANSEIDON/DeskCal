@@ -4,6 +4,11 @@
 
 ### Changed
 
+- **Week ranges are now optional.** The weeks box on each class, the week-number control
+  in settings and the week numbers beside the calendar only appear when **⚙ → Week ranges**
+  is on. It is off by default, and turns itself on when your timetable already has week
+  ranges or an import brings in a half-semester class. While it is off, ranges are ignored
+  (not deleted) and settings show the simple odd / even choice again.
 - After adding a class to several selected periods (Enter or **Add**), the selection is
   cleared and the new class is selected, instead of leaving every cell outlined.
 - Exam times that the university gives only as 上午 / 下午 / 晚上 are shown in the current

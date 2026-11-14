@@ -1522,6 +1522,46 @@ app.update()
 check(app.exam_e["fin"][1].get() == "Evening", "언어를 바꾸면 'Evening' 으로 따라 바뀜")
 app.destroy()
 
+
+print("\n== 주차 범위 기능 켜고 끄기 ==")
+app, d = fresh(conf={"lang": "en"}, files={"timetable.json": {
+    "0-1": {"title": "Half", "room": "", "color": deskcal.PALETTE[0], "week": "all"}}})
+app.set_view("tt")
+app.tt_sel = (0, 1)
+app.render()
+app.update()
+check(not app.week_ranges and app.tt_weeks_e is None, "기본은 꺼짐: 수업 패널에 주차 범위 칸이 없음")
+app.menu()
+app.update()
+LB2 = lambda: [w.cget("text") for w in walk(app.panel, []) if w.winfo_class() == "Label"]
+check(app.t("set_odd") in LB2() and app.t("week_now") not in LB2() and app.t("week_ranges") in LB2(),
+      "꺼져 있으면 설정에는 예전처럼 单/双 고르기만")
+app.set_week_ranges(True)
+app.update()
+check(app.t("week_now") in LB2() and app.t("set_odd") not in LB2(), "켜면 설정에 주차 번호 조절이 나옴")
+app.menu()
+app.update()
+check(app.tt_weeks_e is not None, "켜면 수업 패널에 주차 범위 칸이 나옴")
+app.set_week_no(10)
+app.tt_weeks_e.insert(0, "1-8")
+app.tt_commit()
+check(app.tt["0-1"].get("weeks") == "1-8" and not app.item_on(app.tt["0-1"], app.today)
+      and app.week_no(app.today) == 10, "켜져 있을 때: 10주차에 1-8주 수업은 이번 주에 없음")
+app.set_week_ranges(False)
+app.update()
+check(app.tt["0-1"].get("weeks") == "1-8" and app.item_on(app.tt["0-1"], app.today)
+      and app.week_no(app.today) is None and app.tt_weeks_e is None,
+      "끄면 범위를 무시하고(적어 둔 값은 그대로) 칸도 사라짐")
+app.tt_room.insert(0, "R1")
+app.tt_commit()
+check(app.tt["0-1"].get("weeks") == "1-8" and app.tt["0-1"]["room"] == "R1",
+      "꺼진 채로 다른 걸 고쳐도 적어 둔 범위는 지워지지 않음")
+app.destroy()
+app, d = fresh(conf={"lang": "en"}, files={"timetable.json": {
+    "0-1": {"title": "Half", "room": "", "color": deskcal.PALETTE[0], "week": "all", "weeks": "1-8"}}})
+check(app.week_ranges, "이미 주차 범위가 있는 시간표면 스스로 켜짐")
+app.destroy()
+
 # ------------------------------------------------------------------
 n_fail = RESULTS.count(False)
 print("\n%d개 중 %d개 통과%s" % (len(RESULTS), len(RESULTS) - n_fail,

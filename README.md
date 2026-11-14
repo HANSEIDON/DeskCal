@@ -129,10 +129,10 @@ and nothing is uploaded.
 | Undo | Ctrl+Z |
 | Add a class | **Timetable** → click a cell → type the course name (saves automatically) |
 | Odd / even-week class | **Every / Odd / Even** in the side panel |
-| Half-semester or custom weeks | Type `1-8` or `1,3,5-7` in the weeks box (blank = whole semester) |
+| Half-semester or custom weeks | Turn on **⚙ → Week ranges**, then type `1-8` or `1,3,5-7` in the weeks box (blank = whole semester) |
 | Two classes in one slot | Select the class → **+ Another class here** |
 | Exam dates | Select a class → **Exams · Deadlines**. They show on the calendar as squares |
-| Set the week of the semester | **⚙ → This week**, then **−** / **+** (odd / even follows the number) |
+| Set which week is odd | **⚙ → Odd / even week** (with Week ranges on: **⚙ → This week**, then **−** / **+**) |
 
 Settings also has language, theme, background, size (including **Compact**), export and
 backup. After two idle minutes, the calendar jumps back to today.
