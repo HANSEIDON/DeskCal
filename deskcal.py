@@ -507,6 +507,7 @@ def pick_font(root, lang):
 TEXT = {
     "ko": {
         "lang_name": "한국어",
+        "part_am": "오전", "part_pm": "오후", "part_eve": "저녁",
         "week_n": "{n}주차", "week_now": "이번 주 (학기 몇 번째 주인지)",
         "week_unset_hint": "+ 를 눌러 이번 주가 몇 주차인지 정하면 '1-8주' 같은 주차 범위가 맞게 표시돼요.",
         "weeks_hint": "예: 1-8 또는 1,3,5 · 비우면 학기 내내",
@@ -615,6 +616,7 @@ TEXT = {
     },
     "en": {
         "lang_name": "English",
+        "part_am": "Morning", "part_pm": "Afternoon", "part_eve": "Evening",
         "week_n": "Week {n}", "week_now": "This week (week of the semester)",
         "week_unset_hint": "Press + to set which week of the semester this is, so week ranges like 1-8 show correctly.",
         "weeks_hint": "e.g. 1-8 or 1,3,5 · blank = all semester",
@@ -724,6 +726,7 @@ TEXT = {
     },
     "zh": {
         "lang_name": "中文",
+        "part_am": "上午", "part_pm": "下午", "part_eve": "晚上",
         "week_n": "第{n}周", "week_now": "本周（学期第几周）",
         "week_unset_hint": "点 + 设置本周是第几周，“1-8周”这类周次范围才能正确显示。",
         "weeks_hint": "如 1-8 或 1,3,5 · 留空 = 整学期",
@@ -1498,6 +1501,11 @@ def item_active(it, odd, week_no):
     return True
 
 
+# 학교가 주는 시험 시간은 '上午 / 下午 / 晚上' 뿐일 때가 많다. 저장은 받은 그대로 하고,
+# 보여줄 때만 지금 언어로 바꾼다 (언어를 바꾸면 따라 바뀌고, 저장 형식은 그대로다).
+EXAM_PARTS = {"上午": "part_am", "下午": "part_pm", "晚上": "part_eve"}
+
+
 COMPACT = (320, 520)        # 컴팩트 모드의 창 크기 (100% 배율 기준)
 REPEATS = ["", "weekly", "biweekly", "monthly"]
 RELEASES_API = "https://api.github.com/repos/HANSEIDON/DeskCal/releases/latest"
@@ -1909,6 +1917,7 @@ class DeskCal(tk.Tk):
         self.repeat = ""                   # 새 일정의 반복 (REPEATS)
         self._scroll = self._scroll_mode = None
         self._wheel, self._wheel_t = 0, 0.0
+        self._wheel_last, self._wheel_lock = 0.0, False
         self._cls_sig = None
         self._upd_q, self._upd_busy = queue.Queue(), False
         self._upd_state, self._upd_btn, self._upd_dl_q = None, None, queue.Queue()
@@ -4000,7 +4009,7 @@ class DeskCal(tk.Tk):
             self.hover_group(parts, [box, db], SUNK, LINE)
             self.tip(box, self.t("tip_date"))
             te = self.hint_entry(g, 12, self.t("time_hint"), width=9)
-            te.insert(0, tm)
+            te.insert(0, self.note_out(tm))
             te.grid(row=row, column=2, padx=(self.px(6), 0), ipady=self.px(6), pady=self.px(3))
             te.bind("<Return>", lambda _: self.tt_commit())
             te.bind("<FocusOut>", lambda _: self.tt_commit(), add="+")
@@ -4096,7 +4105,7 @@ class DeskCal(tk.Tk):
         for k, (db, te) in self.exam_e.items():
             # 시간으로 알아들으면 14:00 처럼 정리하고, 아니면 적은 그대로 메모로 둔다.
             # (실제로 '中期报告' 처럼 메모를 적어 쓰고 있었다)
-            raw = te.get().strip()
+            raw = self.note_in(te.get().strip())
             tm = parse_time(raw)
             if tm and raw != tm:
                 te.delete(0, "end")
@@ -4334,6 +4343,19 @@ class DeskCal(tk.Tk):
         self._draft = None
         self.render_panel()
         self.tt_title.focus_set()
+
+    def note_out(self, tm):
+        """시험 시간·비고를 화면에 보여줄 글로: '晚上' → '저녁' / 'Evening'."""
+        key = EXAM_PARTS.get((tm or "").strip())
+        return self.t(key) if key else tm
+
+    def note_in(self, text):
+        """화면에 적힌 글을 저장할 값으로: 어느 언어의 '저녁'·'Evening' 이든 '晚上' 으로."""
+        low = (text or "").strip().lower()
+        for zh, key in EXAM_PARTS.items():
+            if any(low == str(TEXT[lang].get(key, "")).lower() for lang in TEXT):
+                return zh
+        return text
 
     def dday_text(self, s):
         d = parse_date(s) if isinstance(s, str) else s
@@ -4662,6 +4684,7 @@ class DeskCal(tk.Tk):
         self.render()
 
     def make_exam_row(self, kind, title, tm):
+        tm = self.note_out(tm)
         row = tk.Frame(self.panel, bg=CARD, cursor="hand2")
         row.pack(fill="x", pady=self.px(1))
         done = self.exam_done(title, kind)
@@ -4909,7 +4932,7 @@ class DeskCal(tk.Tk):
                 if d and d >= self.today and not info.get(k + "_done"):
                     # 시험 종류를 앞에 둔다. 과목명이 길어 잘릴 때 '期中'이 잘리면 안 된다.
                     rows.append((d, "%s · %s" % (self.t("exam_%s_s" % k), title),
-                                 info.get(k + "_time", ""),
+                                 self.note_out(info.get(k + "_time", "")),
                                  self.course_color(title), info.get(k + "_time", "")))
         rows.sort(key=lambda r: (r[0], r[4] or ""))
         return [r[:4] for r in rows]
@@ -5020,13 +5043,21 @@ class DeskCal(tk.Tk):
                 cv._sync()
             return
         if w is self.cal and self.view == "cal" and not self.compact:
+            # 휠 마우스는 한 칸(120)에 한 달. 터치패드는 한 번 쓸 때 작은 값이 수십 번,
+            # 손을 뗀 뒤에도 관성으로 계속 들어온다. 그걸 다 셌더니 한 번 쓸면 여러 달이
+            # 넘어갔다. 그래서 터치패드는 '한 번 쓸기 = 한 달' 로 한다: 한 달을 넘긴 뒤에는
+            # 입력이 잠깐(0.25초) 끊길 때까지 더 넘기지 않는다.
             now = time.time()
-            if now - self._wheel_t > 0.6:
-                self._wheel = 0                # 오래된 자투리 움직임은 버린다
+            if now - self._wheel_last > 0.25:      # 새 동작의 시작
+                self._wheel, self._wheel_lock = 0, False
+            self._wheel_last = now
+            fine = abs(e.delta) < 120              # 터치패드처럼 잘게 오는 입력
+            if fine and self._wheel_lock:
+                return
             self._wheel += e.delta
-            if abs(self._wheel) >= 120 and now - self._wheel_t > 0.1:
+            if abs(self._wheel) >= 120 and now - self._wheel_t > 0.2:
                 n = -1 if self._wheel > 0 else 1
-                self._wheel, self._wheel_t = 0, now
+                self._wheel, self._wheel_t, self._wheel_lock = 0, now, fine
                 self.shift(n)
 
     def panel_head(self, text, count=None):
@@ -5969,7 +6000,7 @@ class DeskCal(tk.Tk):
                 if not d_cur:                        # 비어 있을 때만 기본으로 채운다
                     out.append({"kind": "exam", "title": title, "exam": info["exam"], "on": True,
                                 "text": self.t("chg_exam_new", t=title,
-                                               d=self.btn_date(parse_date(d_new)), tm=tm)})
+                                               d=self.btn_date(parse_date(d_new)), tm=self.note_out(tm))})
                 elif d_cur.isoformat() != d_new:     # 직접 적은 날짜와 다르면 고를 수 있게만
                     out.append({"kind": "exam", "title": title, "exam": info["exam"], "on": False,
                                 "text": self.t("chg_exam_diff", t=title,

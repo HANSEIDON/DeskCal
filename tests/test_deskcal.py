@@ -1442,6 +1442,63 @@ deskcal.DeskCal.notice = orig_notice
 os.startfile = real_startfile
 app.destroy()
 
+
+print("\n== 달력 휠 민감도 · 시험 시간 표시 (이슈 #3) ==")
+app, d = fresh(conf={"lang": "ko"}, files={
+    "timetable.json": {"0-1": {"title": "数据治理", "room": "", "color": deskcal.PALETTE[0], "week": "all"}},
+    "courses.json": {"数据治理": {"fin_date": (dt.date.today() + dt.timedelta(days=9)).isoformat(),
+                                "fin_time": "晚上"}}})
+app.update()
+
+
+class W:
+    pass
+
+
+def wheel(delta):
+    ev = W()
+    ev.x_root, ev.y_root, ev.delta = app.cal.winfo_rootx() + 60, app.cal.winfo_rooty() + 90, delta
+    app.on_wheel(ev)
+
+
+def months_from(start):
+    return (app.shown.year - start.year) * 12 + app.shown.month - start.month
+
+
+if app.winfo_containing(app.cal.winfo_rootx() + 60, app.cal.winfo_rooty() + 90) is app.cal:
+    m0 = app.shown
+    for _ in range(40):                      # 터치패드로 한 번 쓸기: 작은 값 40번 + 관성
+        wheel(-30)
+    check(months_from(m0) == 1, "터치패드로 한 번 쓸면 한 달만 넘어감 (%d달)" % months_from(m0))
+    time.sleep(0.3)
+    for _ in range(40):
+        wheel(-30)
+    check(months_from(m0) == 2, "잠깐 멈췄다 다시 쓸면 또 한 달 (%d달)" % months_from(m0))
+    time.sleep(0.3)
+    wheel(120)
+    check(months_from(m0) == 1, "휠 마우스는 한 칸에 한 달 (%d달)" % months_from(m0))
+    time.sleep(0.3)
+    for _ in range(5):                       # 휠을 빠르게 여러 칸 돌려도 한꺼번에 날아가지 않는다
+        wheel(120)
+    check(months_from(m0) == 0, "휠을 빠르게 5칸 돌려도 한 달만 (%d달)" % months_from(m0))
+    app.go_today()
+else:
+    print("SKIP - 달력이 다른 창에 가려 휠 테스트를 건너뜀")
+check(app.note_out("晚上") == "저녁" and app.note_out("14:00") == "14:00" and app.note_out("期末论文") == "期末论文",
+      "시험 시간 '晚上' 은 지금 언어로, 시각·메모는 그대로")
+check(app.note_in("저녁") == "晚上" and app.note_in("evening") == "晚上" and app.note_in("발표") == "발표",
+      "어느 언어로 적어도 저장은 같은 값으로")
+check(any(r[2] == "저녁" for r in app.upcoming_rows()), "다가오는 일정에 '저녁' 으로 표시")
+app.set_view("tt")
+app.update()
+check(app.exam_e["fin"][1].get() == "저녁", "시간표 패널의 시험 시간 칸에도 '저녁'")
+app.tt_commit()
+check(app.courses["数据治理"]["fin_time"] == "晚上", "그대로 저장해도 값은 '晚上' 그대로")
+app.set_lang("en")
+app.update()
+check(app.exam_e["fin"][1].get() == "Evening", "언어를 바꾸면 'Evening' 으로 따라 바뀜")
+app.destroy()
+
 # ------------------------------------------------------------------
 n_fail = RESULTS.count(False)
 print("\n%d개 중 %d개 통과%s" % (len(RESULTS), len(RESULTS) - n_fail,

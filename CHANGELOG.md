@@ -6,6 +6,14 @@
 
 - After adding a class to several selected periods (Enter or **Add**), the selection is
   cleared and the new class is selected, instead of leaving every cell outlined.
+- Exam times that the university gives only as 上午 / 下午 / 晚上 are shown in the current
+  language (Morning / Afternoon / Evening, 오전 / 오후 / 저녁) and follow a language change.
+  The stored value is unchanged (issue #3).
+
+### Fixed
+
+- Scrolling the calendar with a touchpad flipped through several months per swipe. One
+  swipe now moves one month; a mouse wheel still moves one month per notch (issue #3).
 
 ## 1.3.1 — 2026-11-13
 
