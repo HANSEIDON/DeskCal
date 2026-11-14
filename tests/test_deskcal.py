@@ -1362,6 +1362,16 @@ check(app.tt.get("0-1", {}).get("title") == "새 수업" and app.t("add") not in
       and app.t("del_class") in LB(), "'추가'를 누르면 저장되고 버튼이 '지우기'로 바뀜")
 app.tt_add_alt()
 check(app.t("add") in LB(), "같은 시간에 수업을 더 넣을 때도 '추가' 버튼이 보임")
+app.tt_sel, app.tt_multi = (3, 5), {(3, 5), (3, 6), (3, 7)}
+app._tt_adding = False
+app.render()
+app.tt_title.insert(0, "세 칸 수업")
+app.tt_enter()
+app.update()
+check(app.tt_multi is None and app.tt_sel == (3, 5)
+      and all(app.tt.get("3-%d" % q, {}).get("title") == "세 칸 수업" for q in (5, 6, 7)),
+      "여러 칸에 수업을 넣으면 선택이 풀리고 넣은 수업이 골라짐")
+check(app.tt_title.get() == "세 칸 수업" and app.t("del_class") in LB(), "넣은 수업이 패널에 떠 있음")
 app.destroy()
 
 

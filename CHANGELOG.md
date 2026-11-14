@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- After adding a class to several selected periods (Enter or **Add**), the selection is
+  cleared and the new class is selected, instead of leaving every cell outlined.
+
 ## 1.3.1 — 2026-11-13
 
 ### Added

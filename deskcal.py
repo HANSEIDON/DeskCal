@@ -3892,7 +3892,7 @@ class DeskCal(tk.Tk):
         self.tt_room.insert(0, draft["room"] if draft else shown_r)
         self.tt_room.grid(row=1, column=1, sticky="ew", ipady=self.px(6), pady=self.px(3))
         for w in (self.tt_title, self.tt_room):
-            w.bind("<Return>", lambda _: self.tt_commit())
+            w.bind("<Return>", lambda _: self.tt_enter())
             w.bind("<FocusOut>", lambda _: self.tt_commit(), add="+")
         self.tt_title.bind("<KeyRelease>", self.tt_title_changed)
 
@@ -3912,7 +3912,7 @@ class DeskCal(tk.Tk):
         self.tt_weeks_e = self.hint_entry(form, 11, self.t("weeks_hint"))
         self.tt_weeks_e.insert(0, draft.get("weeks", self.tt_weeks) if draft else self.tt_weeks)
         self.tt_weeks_e.grid(row=3, column=1, sticky="ew", ipady=self.px(4), pady=self.px(3))
-        self.tt_weeks_e.bind("<Return>", lambda _: self.tt_commit())
+        self.tt_weeks_e.bind("<Return>", lambda _: self.tt_enter())
         self.tt_weeks_e.bind("<FocusOut>", lambda _: self.tt_commit(), add="+")
         self.field_label(form, self.t("color"), 4)
         self.tt_color = pc(it.get("color", getattr(self, "tt_color", PALETTE[4])))
@@ -4291,9 +4291,23 @@ class DeskCal(tk.Tk):
             self.tt_title.focus_set()
             return
         self.tt_commit()
+        if self.tt_multi:
+            # 여러 칸을 골라 수업을 넣었으면 선택을 푼다. 넣고 난 뒤에도 칸마다 파란
+            # 테두리가 남아 있으면 아직 끝나지 않은 것처럼 보인다. 넣은 수업은 골라 둔다.
+            self.tt_sel = min(self.tt_multi)
+            self.tt_multi = None
+            self._tt_anchor, self._tt_base = self.tt_sel, set()
+            self.draw_tt()
         self._draft = None
         self.render_panel()
         self.set_status("saved")
+
+    def tt_enter(self):
+        """입력칸에서 Enter. 여러 칸을 고른 상태면 저장하고 선택을 푼다 ('추가' 버튼과 같다)."""
+        if self.tt_multi:
+            self.tt_save_new()
+        else:
+            self.tt_commit()
 
     def tt_pick_alt(self, i):
         """이 칸의 i 번째 수업을 고칠 대상으로 바꾼다."""
